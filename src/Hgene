@@ -1,0 +1,40 @@
+#!/bin/bash
+
+SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]:-$0}"; )" &> /dev/null && pwd 2> /dev/null; )";
+
+
+if [ -z "$*" ]; then
+  echo "Arguments are missing (Hgene -h for help)"
+  exit 0
+fi
+
+if [ -z "$4" ]; then
+CPU=$(nproc)
+else
+CPU=$4
+fi
+
+echo "CPU: "$CPU
+
+while getopts ":hv:" opt; do
+	case $opt in
+                 h)
+                       echo "Usage : Hgene -options(-h display this help, -v \"viruses\" HHV1, HHV2, VZV, CMV) [fastqPrefix] [nb of cpu]"
+                       exit 0
+                       ;;
+                 v)
+                      echo  "Virus : $OPTARG"
+                      virus=$OPTARG
+                      shift $((OPTIND-1))
+                      ;;
+		\?)
+			echo "Unknown option $OPTARG" >&2
+			;;
+	esac
+done
+
+# main
+
+bash $SCRIPT_DIR/fastq2consensus.sh $1 $CPU $virus 2>"$1".log
+
+exit 0

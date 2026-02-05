@@ -1,0 +1,11 @@
+##gff-version 3
+##source-version rtracklayer 1.58.0
+##date 2024-04-30
+UL23-HHV2	rtracklayer	gene	1	1131	.	+	.	biotype=protein_coding;Name=UL23-HHV2;ID=gene:UL23-HHV2;
+UL30-HHV2	rtracklayer	gene	1	3723	.	+	.	biotype=protein_coding;Name=UL30-HHV2;ID=gene:UL30-HHV2;
+UL23-HHV2	rtracklayer	transcript	1	1131	.	+	.	biotype=protein_coding;Name=UL23-HHV2;ID=transcript:UL23-HHV2;Parent=gene:UL23-HHV2
+UL30-HHV2	rtracklayer	transcript	1	3723	.	+	.	biotype=protein_coding;Name=UL30-HHV2;ID=transcript:UL30-HHV2;Parent=gene:UL30-HHV2
+UL23-HHV2	rtracklayer	exon	1	1131	.	+	.	biotype=protein_coding;Name=UL23-HHV2;ID=exon:UL23-HHV2;Parent=transcript:UL23-HHV2
+UL30-HHV2	rtracklayer	exon	1	3723	.	+	.	biotype=protein_coding;Name=UL30-HHV2;ID=exon:UL30-HHV2;Parent=transcript:UL30-HHV2
+UL23-HHV2	rtracklayer	CDS	1	1131	.	+	0	biotype=protein_coding;Name=UL23-HHV2;ID=CDS:UL23-HHV2;Parent=transcript:UL23-HHV2
+UL30-HHV2	rtracklayer	CDS	1	3723	.	+	0	biotype=protein_coding;Name=UL30-HHV2;ID=CDS:UL30-HHV2;Parent=transcript:UL30-HHV2
