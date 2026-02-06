@@ -27,12 +27,12 @@ Dans le dossier du projet :
 Exécutez le conteneur Singularity avec les options suivantes :
 
 ```
-singularity exec hgene.sif Hgene -v [VIRUS] [fastqPrexif] [CPU]
+singularity exec hgene.sif Hgene -v [VIRUS] [fastqPrefix] [CPU]
 ```
 
 ### Options disponibles
 
 - **-h** : Affiche cette aide.
-- **-v** : Spécifie le virus (par exemple, HHV1, HHV2, CMV).
+- **-v** : Spécifie le virus (par exemple, HHV1, HHV2).
 - **[fastqPrefix]** : Préfixe des fichiers FASTQ.
 - **[nb de CPU]** : Nombre de CPU à utiliser.
