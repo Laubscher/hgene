@@ -35,18 +35,24 @@ lofreq filter --no-defaults --cov-min 20 --af-min 0.1 -i $1.lofreq.vcf -o $1_fl.
 # Contre la référence
 python3 $SCRIPT_DIR/readVCF.py $1_fl.vcf > $1.3.vcf # on applique un threshold different au deletion (car homopolymer biais -> différent selon la longueur de la region HRUN= dans le .vcf)
 
-bgzip $1.3.vcf
+bgzip -f $1.3.vcf
 
 bcftools index $1.3.vcf.gz
 
 #norm mettre deux lignes pour deux variants même positions
 
 #csq -> conséquences AA
-bcftools norm -Ou -m- -f $SCRIPT_DIR/../db/$2.fasta $1.3.vcf.gz | bcftools csq -Ob --local-csq --force -o $1.vcf.gz \
+bcftools norm -Ou -m- -f $SCRIPT_DIR/../db/$2.fasta $1.3.vcf.gz | bcftools csq -Ob --local-csq --force -o $1.4.vcf.gz \
               --fasta-ref=$SCRIPT_DIR/../db/$2.fasta \
               --gff=$SCRIPT_DIR/../db/$2.gff
 
+#Fusion des SNV majoritaires dans un même codon
+python3 $SCRIPT_DIR/merge_codon_mutations.py  $1.4.vcf.gz $SCRIPT_DIR/../db/$2.fasta $SCRIPT_DIR/../db/$2.gff 0.5 > $1.vcf
+
+bgzip -f $1.vcf
 bcftools index $1.vcf.gz
+
+
 
 rm $1.3.vcf.gz $1.3.vcf.gz.csi
 
