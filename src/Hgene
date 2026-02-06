@@ -19,7 +19,7 @@ echo "CPU: "$CPU
 while getopts ":hv:" opt; do
 	case $opt in
                  h)
-                       echo "Usage : Hgene -options(-h display this help, -v \"viruses\" HHV1, HHV2, VZV, CMV) [fastqPrefix] [nb of cpu]"
+                       echo "Usage : Hgene -options(-h display this help, -v \"viruses\" HHV1, HHV2) [fastqPrefix] [nb of cpu]"
                        exit 0
                        ;;
                  v)
