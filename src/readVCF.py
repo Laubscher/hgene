@@ -1,21 +1,51 @@
 #!/usr/bin/env python3
-
 import sys
 
-vcf=open(str(sys.argv[1]), "r")
+THR_DEFAULT = 0.20       # deletion si HRUN < 4 (ou absent)
+THR_HRUN_4PLUS = 0.40    # deletion si HRUN >= 4
+MIN_DP_MINOR = 100       # si AF < 0.5, DP minimal
 
-for l in vcf:
-  if l[0]!="#":
-    ligne=l.rstrip().split("\t")
-    if len(ligne[3]) > len(ligne[4]):  # si la longueur de la REF est plus grande que l'ALT il s'agit d'une deletion 
-      if float(ligne[-1].split(";")[1].split("=")[1]) >= 0.4:
-        print(l.rstrip())
-      else:
-        pass #on peut compter les entry supr pour les log
-    else:
-      print(l.rstrip())   # si pas deletion print
-  else: 
-    print(l.rstrip())     # si commentaire /header print 
- 
-vcf.close()
+def get_info(info, key):
+    for f in info.split(";"):
+        if f.startswith(key + "="):
+            return f.split("=", 1)[1]
+    return None
 
+vcf_path = sys.argv[1]
+
+with open(vcf_path, "r") as vcf:
+    for l in vcf:
+        if l.startswith("#"):
+            print(l.rstrip())
+            continue
+
+        ligne = l.rstrip("\n").split("\t")
+        ref = ligne[3]
+        alt = ligne[4]
+        info = ligne[7]
+
+        af_s = get_info(info, "AF")
+        dp_s = get_info(info, "DP")
+        hrun_s = get_info(info, "HRUN")
+
+        # Si AF absent, on ne peut pas appliquer les filtres -> skip
+        if af_s is None:
+            continue
+
+        af = float(af_s)
+        dp = int(dp_s) if dp_s is not None else 0
+        hrun = int(hrun_s) if hrun_s is not None else 0
+
+        # Nouveau filtre: variants minoritaires
+        if af < 0.5 and dp < MIN_DP_MINOR:
+            continue
+
+        # Si pas deletion -> print
+        if len(ref) <= len(alt):
+            print(l.rstrip())
+            continue
+
+        # Deletion: seuil dépend de HRUN
+        thr = THR_HRUN_4PLUS if hrun >= 4 else THR_DEFAULT
+        if af >= thr:
+            print(l.rstrip())

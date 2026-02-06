@@ -119,24 +119,24 @@ COPY --from=htslib /app/htslib.pc /usr/lib/pkgconfig/
 RUN ln -sf libhts.so.1.19.1 /usr/lib/libhts.so \
  && ln -sf libhts.so.1.19.1 /usr/lib/libhts.so.3
 
-
-# flye
-RUN mkdir -p /tmp/flye \
-   && curl -kL https://github.com/fenderglass/Flye/archive/refs/tags/2.9.4.tar.gz \
-   | tar -C /tmp/flye --strip-components=1 -zxf - \
-   && cd /tmp/flye \
-   && (if [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
-      make arm_neon=1 aarch64=1; \
-   elif [ "$TARGETPLATFORM" = "linux/amd64" ]; then \
-      make; \
-   fi) \
-   && python3 setup.py install \
-   && rm -rf /tmp/flye
-   
 COPY --chmod=755 bin/* /usr/local/bin/
 COPY --chmod=755 src/* /usr/local/bin/
 COPY --chmod=755 db/* /usr/local/db/
    
 ENV PATH="/usr/local/bin:${PATH}"
 
+# --- Release metadata (OCI labels) + default entrypoint (for Singularity/Apptainer "run") ---
+ARG VERSION=dev
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
 
+LABEL org.opencontainers.image.title="hsv-hgene" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.source="https://github.com/Laubscher/hsv-hgene.git" \
+      org.opencontainers.image.licenses="MIT"
+
+# Makes `singularity run <image>.sif ...` work (runs Hgene by default)
+ENTRYPOINT ["Hgene"]
+CMD ["--help"]

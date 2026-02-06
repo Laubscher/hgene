@@ -9,7 +9,6 @@ export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/local/lib"
 
 SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]:-$0}"; )" &> /dev/null && pwd 2> /dev/null; )";
 
-
 rm $1_tr.fastq
 
 samtools sort $1.sam -o $1.sorted1.bam
@@ -31,10 +30,10 @@ lofreq call-parallel --pp-threads $CPU -f $SCRIPT_DIR/../db/$2.fasta --no-defaul
 
 gunzip $1.lofreq.vcf.gz
 
-lofreq filter --no-defaults --cov-min 10 --af-min 0.1 -i $1.lofreq.vcf -o $1_fl.vcf #--sb-alpha 0.01 --sb-incl-indels
+lofreq filter --no-defaults --cov-min 20 --af-min 0.1 -i $1.lofreq.vcf -o $1_fl.vcf #--sb-alpha 0.01 --sb-incl-indels
 
-                             # Contre la référence
-python3 $SCRIPT_DIR/readVCF.py $1_fl.vcf > $1.3.vcf    # on applique un threshold different au deletion (car homopolymer biais -> à voir si différent selon la longueur de la region HRUN= dans le .vcf)
+# Contre la référence
+python3 $SCRIPT_DIR/readVCF.py $1_fl.vcf > $1.3.vcf # on applique un threshold different au deletion (car homopolymer biais -> différent selon la longueur de la region HRUN= dans le .vcf)
 
 bgzip $1.3.vcf
 
@@ -49,7 +48,7 @@ bcftools norm -Ou -m- -f $SCRIPT_DIR/../db/$2.fasta $1.3.vcf.gz | bcftools csq -
 
 bcftools index $1.vcf.gz
 
-rm $1.3.vcf.gz $1.3.vcf.gz.csi $1.3.vcf
+rm $1.3.vcf.gz $1.3.vcf.gz.csi
 
 mkdir BAM_$1
 mv $1.bam BAM_$1/
