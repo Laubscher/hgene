@@ -14,7 +14,13 @@ rm $1_tr.fastq
 samtools sort $1.sam -o $1.sorted1.bam
 samtools index $1.sorted1.bam
 samtools view -bq 40 $1.sorted1.bam > $1.filtered2.bam
-samtools view -e 'rlen>999' -O BAM -o $1.filtered.bam $1.filtered2.bam
+
+if [ "$virus" = "HHV5" ]; then
+  samtools view -e 'rlen>99' -O BAM -o $1.filtered.bam $1.filtered2.bam
+else
+  samtools view -e 'rlen>999' -O BAM -o $1.filtered.bam $1.filtered2.bam
+fi
+
 samtools sort $1.filtered.bam -o $1.sorted.bam
 samtools index $1.sorted.bam
 

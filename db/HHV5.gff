@@ -1,0 +1,31 @@
+##gff-version 3
+##date 2025-09-10
+UL27-HHV5	rtracklayer	gene	1	1827	.	+	.	biotype=protein_coding;Name=UL27-HHV5;ID=gene:UL27-HHV5;
+UL51-HHV5	rtracklayer	gene	1	474	.	+	.	biotype=protein_coding;Name=UL51-HHV5;ID=gene:UL51-HHV5;
+UL54-HHV5	rtracklayer	gene	1	3729	.	+	.	biotype=protein_coding;Name=UL54-HHV5;ID=gene:UL54-HHV5;
+UL56-HHV5	rtracklayer	gene	1	2553	.	+	.	biotype=protein_coding;Name=UL56-HHV5;ID=gene:UL56-HHV5;
+UL89i1-HHV5	rtracklayer	gene	1	888	.	+	.	biotype=protein_coding;Name=UL89i1-HHV5;ID=gene:UL89i1-HHV5;
+UL89i2-HHV5	rtracklayer	gene	1	1137	.	+	.	biotype=protein_coding;Name=UL89i2-HHV5;ID=gene:UL89i2-HHV5;
+UL97-HHV5	rtracklayer	gene	1	2124	.	+	.	biotype=protein_coding;Name=UL97-HHV5;ID=gene:UL97-HHV5;
+UL27-HHV5	rtracklayer	transcript	1	1827	.	+	.	biotype=protein_coding;Name=UL27-HHV5;ID=transcript:UL27-HHV5;Parent=gene:UL27-HHV5
+UL51-HHV5	rtracklayer	transcript	1	474	.	+	.	biotype=protein_coding;Name=UL51-HHV5;ID=transcript:UL51-HHV5;Parent=gene:UL51-HHV5
+UL54-HHV5	rtracklayer	transcript	1	3729	.	+	.	biotype=protein_coding;Name=UL54-HHV5;ID=transcript:UL54-HHV5;Parent=gene:UL54-HHV5
+UL56-HHV5	rtracklayer	transcript	1	2553	.	+	.	biotype=protein_coding;Name=UL56-HHV5;ID=transcript:UL56-HHV5;Parent=gene:UL56-HHV5
+UL89i1-HHV5	rtracklayer	transcript	1	888	.	+	.	biotype=protein_coding;Name=UL89i1-HHV5;ID=transcript:UL89i1-HHV5;Parent=gene:UL89i1-HHV5
+UL89i2-HHV5	rtracklayer	transcript	1	1137	.	+	.	biotype=protein_coding;Name=UL89i2-HHV5;ID=transcript:UL89i2-HHV5;Parent=gene:UL89i2-HHV5
+UL97-HHV5	rtracklayer	transcript	1	2124	.	+	.	biotype=protein_coding;Name=UL97-HHV5;ID=transcript:UL97-HHV5;Parent=gene:UL97-HHV5
+UL27-HHV5	rtracklayer	exon	1	1827	.	+	.	biotype=protein_coding;Name=UL27-HHV5;ID=exon:UL27-HHV5;Parent=transcript:UL27-HHV5
+UL51-HHV5	rtracklayer	exon	1	474	.	+	.	biotype=protein_coding;Name=UL51-HHV5;ID=exon:UL51-HHV5;Parent=transcript:UL51-HHV5
+UL54-HHV5	rtracklayer	exon	1	3729	.	+	.	biotype=protein_coding;Name=UL54-HHV5;ID=exon:UL54-HHV5;Parent=transcript:UL54-HHV5
+UL56-HHV5	rtracklayer	exon	1	2553	.	+	.	biotype=protein_coding;Name=UL56-HHV5;ID=exon:UL56-HHV5;Parent=transcript:UL56-HHV5
+UL89i1-HHV5	rtracklayer	exon	1	888	.	+	.	biotype=protein_coding;Name=UL89i1-HHV5;ID=exon:UL89i1-HHV5;Parent=transcript:UL89i1-HHV5
+UL89i2-HHV5	rtracklayer	exon	1	1137	.	+	.	biotype=protein_coding;Name=UL89i2-HHV5;ID=exon:UL89i2-HHV5;Parent=transcript:UL89i2-HHV5
+UL97-HHV5	rtracklayer	exon	1	2124	.	+	.	biotype=protein_coding;Name=UL97-HHV5;ID=exon:UL97-HHV5;Parent=transcript:UL97-HHV5
+UL27-HHV5	rtracklayer	CDS	1	1827	.	+	0	biotype=protein_coding;Name=UL27-HHV5;ID=CDS:UL27-HHV5;Parent=transcript:UL27-HHV5
+UL51-HHV5	rtracklayer	CDS	1	474	.	+	0	biotype=protein_coding;Name=UL51-HHV5;ID=CDS:UL51-HHV5;Parent=transcript:UL51-HHV5
+UL54-HHV5	rtracklayer	CDS	1	3729	.	+	0	biotype=protein_coding;Name=UL54-HHV5;ID=CDS:UL54-HHV5;Parent=transcript:UL54-HHV5
+UL56-HHV5	rtracklayer	CDS	1	2553	.	+	0	biotype=protein_coding;Name=UL56-HHV5;ID=CDS:UL56-HHV5;Parent=transcript:UL56-HHV5
+UL89i1-HHV5	rtracklayer	CDS	1	888	.	+	0	biotype=protein_coding;Name=UL89i1-HHV5;ID=CDS:UL89i1-HHV5;Parent=transcript:UL89i1-HHV5
+UL89i2-HHV5	rtracklayer	CDS	1	1137	.	+	0	biotype=protein_coding;Name=UL89i2-HHV5;ID=CDS:UL89i2-HHV5;Parent=transcript:UL89i2-HHV5
+UL97-HHV5	rtracklayer	CDS	1	2124	.	+	0	biotype=protein_coding;Name=UL97-HHV5;ID=CDS:UL97-HHV5;Parent=transcript:UL97-HHV5
+
