@@ -12,12 +12,32 @@ def get_info(info, key):
     return None
 
 vcf_path = sys.argv[1]
+printed_filters = False
 
 with open(vcf_path, "r") as vcf:
     for l in vcf:
+        if l.startswith("##"):
+            print(l.rstrip())
+            continue
+        # Column header line: inject filter definitions once, just before #CHROM
+        if l.startswith("#CHROM"):
+          if not printed_filters:
+                    print(
+                        f'##FILTER=<ID=min_dp_minor,Description="Minor variants (AF < 0.5) require DP >= {MIN_DP_MINOR}">'
+                    )
+                    print(
+                        f'##FILTER=<ID=del_hrun_ge4,Description="Deletions require AF >= {THR_HRUN_4PLUS} when HRUN >= 4">'
+                    )
+                    print(
+                        f'##FILTER=<ID=del_hrun_lt4,Description="Deletions require AF >= {THR_DEFAULT} when HRUN < 4 or HRUN missing">'
+                    )
+                    printed_filters = True
+          print(l.rstrip())
+          continue
         if l.startswith("#"):
             print(l.rstrip())
             continue
+
 
         ligne = l.rstrip("\n").split("\t")
         ref = ligne[3]
@@ -36,7 +56,7 @@ with open(vcf_path, "r") as vcf:
         dp = int(dp_s) if dp_s is not None else 0
         hrun = int(hrun_s) if hrun_s is not None else 0
 
-        # Nouveau filtre: variants minoritaires
+        # variants minoritaires
         if af < 0.5 and dp < MIN_DP_MINOR:
             continue
 
