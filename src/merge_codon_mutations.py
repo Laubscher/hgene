@@ -3,12 +3,8 @@
 merge_codon_mutations.py
 - Fusionne les SNV (AF>=seuil) qui tombent dans le même codon en un seul variant
 - Recalcule CODON_REF/CODON_ALT et AA_REF/AA_ALT
-- La ligne fusionnée reprend comme "template" la ligne du variant le moins fréquent (AF minimal),
-  et on n’édite que POS/REF/ALT/INFO (FORMAT/sample restent ceux du template).
+- La ligne fusionnée reprend comme "template" la ligne du variant le moins fréquent (AF minimal).
 
-Usage:
-  ./merge_codon_mutations.py in.vcf ref.fasta ref.gff [0.5] > out.vcf
-  ./merge_codon_mutations.py - /mnt/data/HHV1.fasta /mnt/data/HHV1.gff 0.5 < in.vcf > out.vcf
 """
 import sys, gzip
 from collections import defaultdict
@@ -285,16 +281,21 @@ def main(vcf_path, fasta_path, gff_path, af_thr=0.5):
         tpl = recs[tpl_i]
         tpl_fields = tpl["fields"][:]
 
+        cds = tpl["ctx"][0]
+
         # construire REF/ALT génomiques sur 3bp (toujours codon complet)
         if strand == "+":
             mnv_pos = codon_anchor
             ref_mnv = codon_ref_cds
             alt_mnv = codon_alt_cds
+            codon_start = codon_anchor
+            idx0 = (codon_start - cds["start"]) - cds["phase"]
         else:
             mnv_pos = codon_anchor - 2
             ref_mnv = revcomp(codon_ref_cds)
             alt_mnv = revcomp(codon_alt_cds)
-
+            idx0 = (cds["end"] - codon_anchor) - cds["phase"]
+        aa_pos = (idx0 // 3) + 1
         tpl_fields[1] = str(mnv_pos)
         tpl_fields[3] = ref_mnv
         tpl_fields[4] = alt_mnv
@@ -310,6 +311,19 @@ def main(vcf_path, fasta_path, gff_path, af_thr=0.5):
         info_d["AA_REF"] = aa(codon_ref_cds)
         info_d["AA_ALT"] = aa(codon_alt_cds)
         info_d["GENE"] = gene
+
+        # Recalcul consequence + réécriture BCSQ si présent
+        new_cons = consequence_from_aa(info_d["AA_REF"], info_d["AA_ALT"])
+
+        # nuc change codon-level en coordonnées génome
+        # ex: "898AAT>GGC" (utilise mnv_pos/ref_mnv/alt_mnv déjà calculés)
+        nuc_change = f"{mnv_pos}{ref_mnv}>{alt_mnv}"
+
+        if "BCSQ" in info_d:
+            info_d["BCSQ"] = update_bcsq_value(
+                info_d["BCSQ"], new_cons, strand, aa_pos,
+                info_d["AA_REF"], info_d["AA_ALT"], nuc_change
+            )
         tpl_fields[7] = format_info(info_d)
 
         merged_line = "\t".join(tpl_fields)
@@ -330,6 +344,41 @@ def main(vcf_path, fasta_path, gff_path, af_thr=0.5):
             continue
         else:
             print(r["line"])
+
+def consequence_from_aa(aa_ref: str, aa_alt: str) -> str:
+    if aa_ref == aa_alt:
+        return "synonymous"
+    if aa_alt == "*":
+        return "stop_gained"
+    if aa_ref == "*":
+        return "stop_lost"
+    return "missense"
+
+def update_bcsq_value(bcsq: str, new_consequence: str, strand: str, aa_pos: int,
+                      aa_ref: str, aa_alt: str, nuc_change: str) -> str:
+    """
+    Met à jour le 1er enregistrement BCSQ.
+    Format supposé:
+      consequence|gene|...|protein_coding|+|300N|900T>C
+    On remplace:
+      [0] consequence
+      [5] AA field -> "{aa_pos}{aa_ref}>{aa_pos}{aa_alt}"
+      [6] nuc field -> nuc_change (ex "898AAT>GGC")
+    """
+    if not bcsq or bcsq == ".":
+        return bcsq
+
+    entries = bcsq.split(",")
+    p = entries[0].split("|")
+    if len(p) < 7:
+        return bcsq
+
+    p[0] = new_consequence
+    p[5] = f"{aa_pos}{aa_ref}>{aa_pos}{aa_alt}"
+    p[6] = nuc_change
+
+    entries[0] = "|".join(p)
+    return ",".join(entries)
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
