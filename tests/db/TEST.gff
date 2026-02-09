@@ -1,0 +1,3 @@
+##gff-version 3
+TEST-A	unit	CDS	1	12	.	+	0	ID=geneA;Name=geneA
+TEST-B	unit	CDS	1	12	.	+	0	ID=geneB;Name=geneB
