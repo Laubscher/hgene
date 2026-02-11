@@ -35,6 +35,6 @@ done
 
 # main
 
-bash $SCRIPT_DIR/fastq2consensus.sh $1 $CPU $virus 2>"$1".log
+bash $SCRIPT_DIR/fastq2vcf.sh $1 $CPU $virus 2>"$1".log
 
 exit 0

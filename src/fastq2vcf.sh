@@ -21,4 +21,4 @@ bash $SCRIPT_DIR/map2HHV.sh $1 $virus $CPU >> $log
 
 echo "Generate consensus.."
 
-bash $SCRIPT_DIR/2consensus.sh $1 $virus $CPU
+bash $SCRIPT_DIR/2vcf.sh $1 $virus $CPU
