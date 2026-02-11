@@ -1,40 +1,70 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
+IFS=$'\n\t'
 
-SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]:-$0}"; )" &> /dev/null && pwd 2> /dev/null; )";
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
 
+usage() {
+  cat >&2 <<'USAGE'
+Usage:
+  Hgene -v <virus> [-c <cpu>] <fastqPrefix>
 
-if [ -z "$*" ]; then
-  echo "Arguments are missing (Hgene -h for help)"
-  exit 0
-fi
+Arguments:
+  -v <virus>       Virus reference key (e.g. HHV1, HHV2, HHV5)
+  -c <cpu>         Threads (default: nproc)
+  <fastqPrefix>    Prefix without extension (expects <prefix>.fastq)
 
-if [ -z "$4" ]; then
-CPU=$(nproc)
-else
-CPU=$4
-fi
+USAGE
+  exit 2
+}
 
-echo "CPU: "$CPU
+timestamp() { date "+%Y-%m-%d %H:%M:%S"; }
+log() { local level="$1"; shift; echo "[$(timestamp)] [$level] $*"; }
+info() { log "INFO" "$*"; }
+step() { log "STEP" "$*"; }
+warn() { log "WARN" "$*"; }
+error() { log "ERROR" "$*"; }
 
-while getopts ":hv:" opt; do
-	case $opt in
-                 h)
-                       echo "Usage : Hgene -options(-h display this help, -v \"viruses\" HHV1, HHV2) [fastqPrefix] [nb of cpu]"
-                       exit 0
-                       ;;
-                 v)
-                      echo  "Virus : $OPTARG"
-                      virus=$OPTARG
-                      shift $((OPTIND-1))
-                      ;;
-		\?)
-			echo "Unknown option $OPTARG" >&2
-			;;
-	esac
+die() { error "$*"; exit 1; }
+
+# -------------------- args --------------------
+virus=""
+CPU="$(nproc)"
+
+while getopts ":hv:c:" opt; do
+  case "$opt" in
+    h) usage ;;
+    v) virus="$OPTARG" ;;
+    c) CPU="$OPTARG" ;;
+    \?) die "Unknown option: -$OPTARG (use -h)" ;;
+    :) die "Option -$OPTARG requires an argument" ;;
+  esac
 done
+shift $((OPTIND-1))
 
-# main
+prefix="${1:-}"
+[[ -n "$prefix" ]] || usage
+[[ -n "$virus" ]] || die "Missing -v <virus> (use -h)"
 
-bash $SCRIPT_DIR/fastq2vcf.sh $1 $CPU $virus 2>"$1".log
+# -------------------- global log (stdout+stderr) --------------------
+LOG="${prefix}.log"
+exec > >(tee -a "$LOG") 2>&1
 
-exit 0
+info "Hgene started"
+info "prefix=$prefix virus=$virus cpu=$CPU"
+
+# Singularity context
+if [[ -n "${SINGULARITY_CONTAINER:-}" ]]; then
+  info "Singularity container: ${SINGULARITY_CONTAINER}"
+  if command -v sha256sum >/dev/null 2>&1 && [[ -r "${SINGULARITY_CONTAINER}" ]]; then
+    info "Container SHA256: $(sha256sum "${SINGULARITY_CONTAINER}" | awk '{print $1}')"
+  fi
+fi
+
+# Sanity check input
+[[ -s "${prefix}.fastq" ]] || die "Input FASTQ not found: ${prefix}.fastq"
+
+step "Running fastq2vcf.sh"
+"${SCRIPT_DIR}/fastq2vcf.sh" "$prefix" "$CPU" "$virus"
+
+info "Hgene finished"
