@@ -19,6 +19,6 @@ echo $virus >> $log
 
 bash $SCRIPT_DIR/map2HHV.sh $1 $virus $CPU >> $log
 
-echo "Generate consensus.."
+echo "Variant_calling.."
 
-bash $SCRIPT_DIR/2vcf.sh $1 $virus $CPU
+bash $SCRIPT_DIR/step_variant_calling.sh $1 $virus $CPU
