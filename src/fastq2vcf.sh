@@ -1,24 +1,50 @@
-#!/bin/bash
-#$1 = prefix file
-CPU=$2
-virus=$3
-echo "Starting.."
-log="log.txt"
-SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]:-$0}"; )" &> /dev/null && pwd 2> /dev/null; )";
+#!/usr/bin/env bash
+set -euo pipefail
+IFS=$'\n\t'
 
-echo "logfile; Sample:$1" > $log
+# Args:
+#   $1 prefix
+#   $2 CPU
+#   $3 virus
 
-echo "Trimming.."
-echo "Trimming.." >> $log
+usage() {
+  cat >&2 <<'USAGE'
+Usage: fastq2vcf.sh <prefix> <CPU> <virus>
 
-porechop -t $CPU --discard_middle -i $1.fastq -o $1_tr.fastq 1> /dev/null # trimming
+Expects:
+  <prefix>.fastq
+USAGE
+  exit 2
+}
 
-echo "Map to reference.." >> $log
-echo "Map to reference.."
-echo $virus >> $log
+timestamp() { date "+%Y-%m-%d %H:%M:%S"; }
+log() { local level="$1"; shift; echo "[$(timestamp)] [$level] $*"; }
+info() { log "INFO" "$*"; }
+step() { log "STEP" "$*"; }
+warn() { log "WARN" "$*"; }
+error() { log "ERROR" "$*"; }
 
-bash $SCRIPT_DIR/map2HHV.sh $1 $virus $CPU >> $log
+die() { error "$*"; exit 1; }
+need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"; }
 
-echo "Variant_calling.."
+[[ $# -eq 3 ]] || usage
+prefix="$1"
+CPU="$2"
+virus="$3"
 
-bash $SCRIPT_DIR/step_variant_calling.sh $1 $virus $CPU
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
+
+need_cmd porechop
+need_cmd bash
+
+[[ -s "${prefix}.fastq" ]] || die "Input FASTQ not found: ${prefix}.fastq"
+
+step "Adapter trimming (porechop)"
+# keep porechop quiet; errors still surface
+porechop -t "$CPU" --discard_middle -i "${prefix}.fastq" -o "${prefix}_tr.fastq" >/dev/null
+
+step "Mapping to reference (map2HHV.sh)"
+bash "${SCRIPT_DIR}/map2HHV.sh" "$prefix" "$virus" "$CPU"
+
+step "Variant calling (step_variant_calling.sh)"
+bash "${SCRIPT_DIR}/step_variant_calling.sh" "$prefix" "$virus" "$CPU"
