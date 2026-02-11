@@ -52,13 +52,20 @@ bcftools norm -Ou -m- -f $SCRIPT_DIR/../db/$2.fasta $1.3.vcf.gz | bcftools csq -
               --fasta-ref=$SCRIPT_DIR/../db/$2.fasta \
               --gff=$SCRIPT_DIR/../db/$2.gff
 
-#Fusion des SNV majoritaires dans un même codon
-python3 $SCRIPT_DIR/merge_codon_mutations.py  $1.4.vcf.gz $SCRIPT_DIR/../db/$2.fasta $SCRIPT_DIR/../db/$2.gff 1 $1.bam 0.9 0.1 > $1.vcf
+#Codon-haplotype calling
+python3 $SCRIPT_DIR/merge_codon_mutations.py \
+  $1.4.vcf.gz \
+  $SCRIPT_DIR/../db/$2.fasta \
+  $SCRIPT_DIR/../db/$2.gff \
+  $1.bam \
+  0.1 \
+  10 \
+  40 \
+  20 \
+  > $1.vcf
 
 bgzip -f $1.vcf
 bcftools index $1.vcf.gz
-
-
 
 rm $1.3.vcf.gz $1.3.vcf.gz.csi
 
