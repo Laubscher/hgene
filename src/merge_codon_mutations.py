@@ -9,6 +9,12 @@ merge_codon_mutations.py
 import sys, gzip
 from collections import defaultdict
 
+# pysam est requis uniquement pour la vérification de linkage via BAM.
+try:
+    import pysam  # type: ignore
+except Exception:
+    pysam = None
+
 DNA_COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
 def revcomp(seq: str) -> str:
@@ -123,6 +129,112 @@ def get_af(info_d, fmt_keys, sample_fields):
             pass
     return None
 
+def _read_base_at_refpos(read, ref_pos0: int):
+    """Retourne (base, qpos) au ref_pos0 (0-based), ou (None, None) si non couvert."""
+    qpos_at = None
+    for qpos, rpos in read.get_aligned_pairs(matches_only=False):
+        if rpos == ref_pos0:
+            if qpos is None:
+                return None, None
+            qpos_at = qpos
+            break
+    if qpos_at is None:
+        return None, None
+    return read.query_sequence[qpos_at], qpos_at
+
+def phase_linkage_snvs(
+    bam_path: str,
+    chrom: str,
+    snvs,
+    min_mapq: int = 40,
+    min_baseq: int = 20,
+    min_informative_reads: int = 10,
+):
+    """Vérifie si 2-3 SNV sont majoritairement portés ensemble sur les mêmes reads.
+
+    snvs: liste de dicts {pos (1-based), ref, alt} en coordonnées génome (VCF).
+    Linkage = AAA/(AAA+MIXED) où:
+      - AAA: tous ALT sur les positions
+      - MIXED: au moins un ALT mais pas tous ALT
+    """
+    if pysam is None:
+        raise RuntimeError("pysam n'est pas disponible mais bam_path a été fourni (installez pysam).")
+
+    pos0s = [s["pos"] - 1 for s in snvs]
+    start0 = min(pos0s)
+    end0 = max(pos0s)
+
+    bam = pysam.AlignmentFile(bam_path, "rb")
+    counts = defaultdict(int)
+    informative = 0
+
+    for read in bam.fetch(chrom, start0, end0 + 1):
+        if read.is_unmapped or read.is_secondary or read.is_supplementary:
+            continue
+        if read.mapping_quality < min_mapq:
+            continue
+        if read.query_qualities is None:
+            continue
+
+        states = []
+        ok = True
+        for s_ in snvs:
+            base, qpos = _read_base_at_refpos(read, s_["pos"] - 1)
+            if base is None or qpos is None:
+                ok = False
+                break
+            if read.query_qualities[qpos] < min_baseq:
+                ok = False
+                break
+            b = base.upper()
+            if b not in "ACGT":
+                ok = False
+                break
+
+            refb = s_["ref"].upper()
+            altb = s_["alt"].upper()
+            if b == refb:
+                states.append("R")
+            elif b == altb:
+                states.append("A")
+            else:
+                states.append("O")
+
+        if not ok:
+            continue
+
+        if "O" in states:
+            counts["OTHER"] += 1
+            informative += 1
+            continue
+
+        if all(x == "R" for x in states):
+            counts["RRR"] += 1
+        elif all(x == "A" for x in states):
+            counts["AAA"] += 1
+        else:
+            if "A" in states:
+                counts["MIXED"] += 1
+            else:
+                counts["OTHER"] += 1
+        informative += 1
+
+    bam.close()
+
+    alt_support = counts["AAA"] + counts["MIXED"]
+    linkage = (counts["AAA"] / alt_support) if alt_support > 0 else 0.0
+
+    return {
+        "counts": dict(counts),
+        "informative_reads": informative,
+        "alt_support_reads": alt_support,
+        "linkage_AAA_over_alt": linkage,
+        "ok_min_reads": informative >= min_informative_reads,
+    }
+
+def should_merge_minor_mnv(phase_res: dict, linkage_thr: float = 0.90) -> bool:
+    return bool(phase_res.get("ok_min_reads")) and float(phase_res.get("linkage_AAA_over_alt", 0.0)) >= linkage_thr
+
 def codon_ctx(chrom, pos1, fasta, cds_by_chr):
     """
     Retourne (cds, codon_anchor, frame, codon_ref_CDS)
@@ -200,7 +312,7 @@ def ensure_info_headers(header_lines):
         out.extend(extras)
     return out
 
-def main(vcf_path, fasta_path, gff_path, af_thr=0.5):
+def main(vcf_path, fasta_path, gff_path, af_thr=0.5, bam_path=None, linkage_thr=0.9, min_informative_reads=10, min_mapq=40, min_baseq=20):
     fasta = load_fasta(fasta_path)
     cds_by_chr = parse_gff_cds(gff_path)
 
@@ -242,27 +354,67 @@ def main(vcf_path, fasta_path, gff_path, af_thr=0.5):
                 "ctx": ctx,  # (cds, codon_anchor, frame, codon_ref_cds)
             })
 
-    # Group SNVs (AF>=thr) by codon
+        # Group SNVs by codon (inclut aussi les minoritaires si bam_path est fourni)
     groups = defaultdict(list)  # key -> list of idx
     for i, r in enumerate(recs):
-        if r["ctx"] is None:   #ctx = contexte codonique
-            continue
-        if r["af"] is None or r["af"] < af_thr:
+        if r["ctx"] is None:
             continue
         if not (len(r["ref"]) == 1 and len(r["alt"]) == 1):
+            continue
+        if r["af"] is None:
             continue
         cds, codon_anchor, _, codon_ref_cds = r["ctx"]
         key = (r["chrom"], cds["gene"], cds["strand"], codon_anchor, codon_ref_cds)
         groups[key].append(i)
-
     to_skip = set()
     merged = {}  # idx -> merged_line (print at earliest idx)
 
     for key, idxs in groups.items():
-        # On fusionne si 2 ou 3 SNV (>=thr) dans le même codon
+        # On fusionne seulement si 2 ou 3 SNV dans le même codon
         if len(idxs) not in (2, 3):
             continue
 
+        # Décision merge:
+        # - si toutes les AF >= af_thr => merge direct (historique)
+        # - sinon, si bam_path fourni => merge seulement si linkage sur reads >= linkage_thr
+        afs = [recs[i]["af"] for i in idxs]
+        all_major = all(a is not None and a >= af_thr for a in afs)
+
+        do_merge = False
+        if all_major:
+            do_merge = True
+        elif bam_path:
+            chrom = recs[idxs[0]]["chrom"]
+            snvs = [{"pos": recs[i]["pos"], "ref": recs[i]["ref"], "alt": recs[i]["alt"]} for i in idxs]
+            phase_res = phase_linkage_snvs(
+                bam_path=bam_path,
+                chrom=chrom,
+                snvs=snvs,
+                min_mapq=min_mapq,
+                min_baseq=min_baseq,
+                min_informative_reads=min_informative_reads,
+            )
+
+            # LOG linkage pour ce codon testé
+            positions = [s["pos"] for s in snvs]
+            aaa = phase_res["counts"].get("AAA", 0)
+            mixed = phase_res["counts"].get("MIXED", 0)
+            inform = phase_res["informative_reads"]
+            alt_support = phase_res["alt_support_reads"]
+            linkage = phase_res["linkage_AAA_over_alt"]
+
+            sys.stderr.write(
+                f"[PHASE] {chrom}:{min(positions)}-{max(positions)} "
+                f"GENE={key[1]} STRAND={key[2]} "
+                f"AAA={aaa} MIXED={mixed} ALT={alt_support} INF={inform} "
+                f"LINK={linkage:.3f}\n"
+            )
+            sys.stderr.flush()
+
+            do_merge = should_merge_minor_mnv(phase_res, linkage_thr=linkage_thr)
+
+        if not do_merge:
+            continue
         chrom, gene, strand, codon_anchor, codon_ref_cds = key
 
         # construire codon_alt
@@ -383,10 +535,21 @@ def update_bcsq_value(bcsq: str, new_consequence: str, strand: str, aa_pos: int,
 if __name__ == "__main__":
     if len(sys.argv) < 4:
         sys.stderr.write(
-            "Usage: merge_codon_mutations.py <in.vcf[.gz] or -> <ref.fasta> <ref.gff> [af_threshold]\n"
+            "Usage: merge_codon_mutations.py <in.vcf[.gz] or -> <ref.fasta> <ref.gff> [af_threshold] [bam_path] [linkage_threshold]\n"
+            "  - af_threshold: seuil 'majoritaire' (défaut 0.5)\n"
+            "  - bam_path: si fourni, permet de fusionner des MNV minoritaires après test de linkage sur reads\n"
+            "  - linkage_threshold: seuil AAA/(AAA+MIXED) (défaut 0.9)\n"
         )
         sys.exit(2)
-    vcf_path, fasta_path, gff_path = sys.argv[1], sys.argv[2], sys.argv[3]
-    af_thr = float(sys.argv[4]) if len(sys.argv) >= 5 else 0.5
-    main(vcf_path, fasta_path, gff_path, af_thr)
 
+    vcf_path, fasta_path, gff_path = sys.argv[1], sys.argv[2], sys.argv[3]
+    af_thr = float(sys.argv[4]) if len(sys.argv) >= 5 and sys.argv[4] not in ("-", "") else 0.5
+    bam_path = sys.argv[5] if len(sys.argv) >= 6 and sys.argv[5] not in ("-", "") else None
+    linkage_thr = float(sys.argv[6]) if len(sys.argv) >= 7 else 0.9
+
+    main(
+        vcf_path, fasta_path, gff_path,
+        af_thr=af_thr,
+        bam_path=bam_path,
+        linkage_thr=linkage_thr,
+    )

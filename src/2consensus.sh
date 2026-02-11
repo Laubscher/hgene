@@ -53,7 +53,7 @@ bcftools norm -Ou -m- -f $SCRIPT_DIR/../db/$2.fasta $1.3.vcf.gz | bcftools csq -
               --gff=$SCRIPT_DIR/../db/$2.gff
 
 #Fusion des SNV majoritaires dans un même codon
-python3 $SCRIPT_DIR/merge_codon_mutations.py  $1.4.vcf.gz $SCRIPT_DIR/../db/$2.fasta $SCRIPT_DIR/../db/$2.gff 0.5 > $1.vcf
+python3 $SCRIPT_DIR/merge_codon_mutations.py  $1.4.vcf.gz $SCRIPT_DIR/../db/$2.fasta $SCRIPT_DIR/../db/$2.gff 0.5 $1.bam 0.9 > $1.vcf
 
 bgzip -f $1.vcf
 bcftools index $1.vcf.gz
@@ -69,6 +69,7 @@ mkdir VCF_$1
 mv $1_fl.vcf VCF_$1/
 mv $1.lofreq.vcf VCF_$1/
 mv $1.lofreq.vcf.gz.tbi VCF_$1/
+mv $1.4.vcf.gz VCF_$1/
 mkdir $1_output
 mv VCF_$1 $1_output
 mv BAM_$1 $1_output
