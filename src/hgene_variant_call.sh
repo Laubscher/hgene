@@ -155,9 +155,9 @@ bcftools norm -Ou -m- -f "$FASTA" "${prefix}.filtered.vcf.gz" \
 end_timer
 
 # -------------------- Codon haplotypes --------------------
-step "codon haplotypes (merge_codon_mutations.py) -> ${prefix}.vcf"
+step "codon haplotypes (hgene_codon_haplotype_merge.py) -> ${prefix}.vcf"
 start_timer
-python3 "${SCRIPT_DIR}/merge_codon_mutations.py" \
+python3 "${SCRIPT_DIR}/hgene_codon_haplotype_merge.py" \
   "${prefix}.bcf.vcf.gz" \
   "$FASTA" \
   "$GFF" \
