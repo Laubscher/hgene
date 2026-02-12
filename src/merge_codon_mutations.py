@@ -16,6 +16,7 @@ Notes:
 import sys
 import gzip
 from collections import defaultdict
+from datetime import datetime
 
 try:
     import pysam  # type: ignore
@@ -161,7 +162,7 @@ def phase_haplotypes_snvs(
     """
     Reconstruct read-level haplotypes on 2-3 SNVs.
 
-    snvs: list of dicts with keys: pos(1-based), ref, alt (and optionally frame used elsewhere)
+    snvs: list of dicts with keys: pos(1-based), ref, alt
 
     Returns dict:
       - hap_counts: patterns like "AR", "AA", "RRR", ... plus "OTHER"
@@ -442,15 +443,19 @@ def main(vcf_path, fasta_path, gff_path, bam_path,
                     continue
                 items.append(f"{pat}:{ct}:{ct/informative:.3f}")
             sys.stderr.write(
+                f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] "
                 f"[CODON_HAP] {chrom}:{min(positions)}-{max(positions)} "
                 f"GENE={gene} STRAND={strand} DPmin={dp_min} INF={informative} "
                 f"{' '.join(items)}\n"
             )
+
         else:
             sys.stderr.write(
+                f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] "
                 f"[CODON_HAP] {chrom}:{min(positions)}-{max(positions)} "
                 f"GENE={gene} STRAND={strand} DPmin={dp_min} INF=0\n"
             )
+
         sys.stderr.flush()
 
         # Select haplotypes to emit
@@ -465,9 +470,11 @@ def main(vcf_path, fasta_path, gff_path, bam_path,
 
         if not hap_patterns:
             sys.stderr.write(
+                f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] "
                 f"[CODON_HAP] {chrom}:{min(positions)}-{max(positions)} "
                 f"GENE={gene} STRAND={strand} no_haplotype_ge_{hap_af_min:.3g} -> keep_original_snvs\n"
             )
+
             sys.stderr.flush()
             continue  # keep original SNVs
 
