@@ -9,7 +9,7 @@ IFS=$'\n\t'
 
 usage() {
   cat >&2 <<'USAGE'
-Usage: fastq2vcf.sh <prefix> <CPU> <virus>
+Usage: hgene_main.sh <prefix> <CPU> <virus>
 
 Expects:
   <prefix>.fastq
@@ -48,8 +48,8 @@ step "Adapter trimming (porechop)"
 # keep porechop quiet; errors still surface
 porechop -t "$CPU" --discard_middle -i "${prefix}.fastq" -o "${prefix}.trimmed.fastq" >/dev/null # trimming
 
-step "Mapping to reference (map2HHV.sh)"
-bash "${SCRIPT_DIR}/map2HHV.sh" "${prefix}.trimmed.fastq" "$virus" "$CPU" "$prefix"
+step "Mapping to reference (hgene_map.sh)"
+bash "${SCRIPT_DIR}/hgene_map.sh" "${prefix}.trimmed.fastq" "$virus" "$CPU" "$prefix"
 
 step "Variant calling (hgene_variant_call.sh)"
-bash "${SCRIPT_DIR}/step_variant_calling.sh" "$prefix" "$virus" "$CPU"
+bash "${SCRIPT_DIR}/hgene_variant_call.sh" "$prefix" "$virus" "$CPU"

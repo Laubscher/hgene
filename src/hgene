@@ -64,7 +64,7 @@ fi
 # Sanity check input
 [[ -s "${prefix}.fastq" ]] || die "Input FASTQ not found: ${prefix}.fastq"
 
-step "Running fastq2vcf.sh"
-"${SCRIPT_DIR}/fastq2vcf.sh" "$prefix" "$CPU" "$virus"
+step "Running hgene_main.sh"
+"${SCRIPT_DIR}/hgene_main.sh" "$prefix" "$CPU" "$virus"
 
 info "hgene finished"

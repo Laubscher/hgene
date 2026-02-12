@@ -134,9 +134,9 @@ lofreq filter --no-defaults --cov-min 20 --af-min 0.1 \
 end_timer
 
 # -------------------- Custom filtering hgene_filter_custom.py --------------------
-step "readVCF.py -> ${prefix}.filtered.vcf"
+step "hgene_filter_custom.py -> ${prefix}.filtered.vcf"
 start_timer
-python3 "${SCRIPT_DIR}/readVCF.py" "${prefix}.lofreq_filtered.vcf" > "${prefix}.filtered.vcf"
+python3 "${SCRIPT_DIR}/hgene_filter_custom.py" "${prefix}.lofreq_filtered.vcf" > "${prefix}.filtered.vcf"
 end_timer
 
 step "bgzip + bcftools index ${prefix}.filtered.vcf"
