@@ -17,7 +17,7 @@ cat > "test_10_in.vcf" <<'VCF'
 UL23-HHV1	103	.	C	A	0	.	DP=100;AF=0.15;SB=0;DP4=75,0,15,0
 VCF
 
-python3 "$SCRIPT_DIR/../src/readVCF.py" "test_10_in.vcf" > "test_10_out.vcf"
+python3 "$SCRIPT_DIR/../src/hgene_filter_custom.py" "test_10_in.vcf" > "test_10_out.vcf"
 
 grep -q "^#CHROM" "test_10_out.vcf" || { echo "FAIL: VCF header missing"; exit 1; }
 

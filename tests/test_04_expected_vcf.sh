@@ -11,7 +11,7 @@ trap cleanup EXIT
 
 cp "$SCRIPT_DIR/data/$FASTQ" .
 
-bash "$SCRIPT_DIR/../src/Hgene" -v HHV1 $TEST_NAME 2
+bash "$SCRIPT_DIR/../src/hgene" -v HHV1 $TEST_NAME 2
 
 VCF="${TEST_NAME}_output/${TEST_NAME}.vcf.gz"
 
@@ -31,3 +31,4 @@ UL30=$(gunzip -c $VCF | tail -1 | cut -f5 -d ";" | tr -d '\n')
 
 echo "OK test_04_expected"
 
+rm test_04_hsv1_XX.log

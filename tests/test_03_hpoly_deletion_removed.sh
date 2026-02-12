@@ -18,7 +18,7 @@ cat > "test_03_in.vcf" <<'VCF'
 UL23-HHV1	103	.	CA	C	0	.	DP=7996;AF=0.35;SB=0;DP4=3000,2180,1400,1416;INDEL;HRUN=8
 VCF
 
-python3 "$SCRIPT_DIR/../src/readVCF.py" "test_03_in.vcf" > "test_03_out.vcf"
+python3 "$SCRIPT_DIR/../src/hgene_filter_custom.py" "test_03_in.vcf" > "test_03_out.vcf"
 
 # La ligne variant ne doit plus être là
 if grep -q $'UL23-HHV1\t103\t.\tCA\tC' "test_03_out.vcf"; then
