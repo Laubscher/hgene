@@ -1,8 +1,0 @@
-##fileformat=VCFv4.2
-##contig=<ID=TEST,length=24>
-##INFO=<ID=AF,Number=1,Type=Float,Description="Allele Frequency">
-##INFO=<ID=DP,Number=1,Type=Integer,Description="Depth">
-##INFO=<ID=BCSQ,Number=1,Type=String,Description="Dummy BCSQ">
-#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
-TEST-A	4	.	A	G	.	PASS	DP=100;AF=0.60;BCSQ=synonymous|geneA|geneA|protein_coding|+|2N|4A>G
-TEST-B	5	.	A	C	.	PASS	DP=100;AF=0.60;BCSQ=missense|geneB|geneB|protein_coding|+|2K|5A>C
