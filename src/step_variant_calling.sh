@@ -133,7 +133,7 @@ lofreq filter --no-defaults --cov-min 20 --af-min 0.1 \
   -i "${prefix}.lofreq_raw.vcf" -o "${prefix}.lofreq_filtered.vcf"
 end_timer
 
-# -------------------- Custom filtering readVCF.py --------------------
+# -------------------- Custom filtering hgene_filter_custom.py --------------------
 step "readVCF.py -> ${prefix}.filtered.vcf"
 start_timer
 python3 "${SCRIPT_DIR}/readVCF.py" "${prefix}.lofreq_filtered.vcf" > "${prefix}.filtered.vcf"

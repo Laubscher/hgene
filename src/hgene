@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && p
 usage() {
   cat >&2 <<'USAGE'
 Usage:
-  Hgene -v <virus> [-c <cpu>] <fastqPrefix>
+  hgene -v <virus> [-c <cpu>] <fastqPrefix>
 
 Arguments:
   -v <virus>       Virus reference key (e.g. HHV1, HHV2, HHV5)
@@ -50,7 +50,7 @@ prefix="${1:-}"
 LOG="${prefix}.log"
 exec > >(tee -a "$LOG") 2>&1
 
-info "Hgene started"
+info "hgene started"
 info "prefix=$prefix virus=$virus cpu=$CPU"
 
 # Singularity context
@@ -67,4 +67,4 @@ fi
 step "Running fastq2vcf.sh"
 "${SCRIPT_DIR}/fastq2vcf.sh" "$prefix" "$CPU" "$virus"
 
-info "Hgene finished"
+info "hgene finished"

@@ -137,6 +137,6 @@ LABEL org.opencontainers.image.title="hsv-hgene" \
       org.opencontainers.image.source="https://github.com/Laubscher/hsv-hgene.git" \
       org.opencontainers.image.licenses="MIT"
 
-# Makes `singularity run <image>.sif ...` work (runs Hgene by default)
+# Makes `singularity run <image>.sif ...` work (runs hgene by default)
 ENTRYPOINT ["Hgene"]
 CMD ["--help"]
