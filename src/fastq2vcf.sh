@@ -27,6 +27,11 @@ error() { log "ERROR" "$*"; }
 die() { error "$*"; exit 1; }
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"; }
 
+cleanup() {
+    rm -f "${prefix}.sam" "${prefix}.trimmed.fastq" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 [[ $# -eq 3 ]] || usage
 prefix="$1"
 CPU="$2"
@@ -41,10 +46,10 @@ need_cmd bash
 
 step "Adapter trimming (porechop)"
 # keep porechop quiet; errors still surface
-porechop -t "$CPU" --discard_middle -i "${prefix}.fastq" -o "${prefix}_tr.fastq" >/dev/null
+porechop -t "$CPU" --discard_middle -i "${prefix}.fastq" -o "${prefix}.trimmed.fastq" >/dev/null # trimming
 
 step "Mapping to reference (map2HHV.sh)"
-bash "${SCRIPT_DIR}/map2HHV.sh" "$prefix" "$virus" "$CPU"
+bash "${SCRIPT_DIR}/map2HHV.sh" "${prefix}.trimmed.fastq" "$virus" "$CPU" "$prefix"
 
 step "Variant calling (step_variant_calling.sh)"
 bash "${SCRIPT_DIR}/step_variant_calling.sh" "$prefix" "$virus" "$CPU"

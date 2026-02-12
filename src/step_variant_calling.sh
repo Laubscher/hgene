@@ -34,7 +34,7 @@ end_timer() {
 }
 
 rmf() { rm -f -- "$@" 2>/dev/null || true; }
-index_vcfgz() { bcftools index "$1"; }  # may create .csi or .tbi
+index_vcfgz() { bcftools index --csi "$1"; }
 
 # -------------------- args --------------------
 [[ $# -eq 3 ]] || usage
@@ -83,6 +83,7 @@ end_timer
 
 step "samtools view length filter"
 start_timer
+
 if [[ "$virus" == "HHV5" ]]; then
   samtools view -e 'rlen>99'  -O BAM -o "${TMPDIR}/${prefix}.filtered.bam" "${TMPDIR}/${prefix}.filtered2.bam"
 else
@@ -109,45 +110,46 @@ samtools index "${prefix}.bam"
 end_timer
 
 # -------------------- LoFreq calling --------------------
-step "LoFreq call-parallel -> ${prefix}.lofreq.vcf.gz"
+step "LoFreq call-parallel -> ${prefix}.lofreq_raw.vcf.gz"
 start_timer
 lofreq call-parallel --pp-threads "$CPU" \
   -f "$FASTA" \
   --no-default-filter -A -B -a 1 -b 1 \
   --force-overwrite --call-indels \
   "${prefix}.bam" \
-  -o "${prefix}.lofreq.vcf.gz"
+  -o "${prefix}.lofreq_raw.vcf.gz"
 end_timer
 
-step "gunzip LoFreq VCF -> ${prefix}.lofreq.vcf"
+step "gunzip LoFreq VCF -> ${prefix}.lofreq_raw.vcf"
 start_timer
-gunzip -f "${prefix}.lofreq.vcf.gz"
+gunzip -f "${prefix}.lofreq_raw.vcf.gz"
+rmf "${prefix}.lofreq_raw.vcf.gz.tbi"
 end_timer
 
 # -------------------- LoFreq filter --------------------
-step "LoFreq filter (cov>=20, af>=0.1) -> ${prefix}_fl.vcf"
+step "LoFreq filter (cov>=20, af>=0.1) -> ${prefix}.lofreq_filtered.vcf"
 start_timer
 lofreq filter --no-defaults --cov-min 20 --af-min 0.1 \
-  -i "${prefix}.lofreq.vcf" -o "${prefix}_fl.vcf"
+  -i "${prefix}.lofreq_raw.vcf" -o "${prefix}.lofreq_filtered.vcf"
 end_timer
 
 # -------------------- Custom filtering readVCF.py --------------------
-step "readVCF.py -> ${prefix}.3.vcf"
+step "readVCF.py -> ${prefix}.filtered.vcf"
 start_timer
-python3 "${SCRIPT_DIR}/readVCF.py" "${prefix}_fl.vcf" > "${prefix}.3.vcf"
+python3 "${SCRIPT_DIR}/readVCF.py" "${prefix}.lofreq_filtered.vcf" > "${prefix}.filtered.vcf"
 end_timer
 
-step "bgzip + bcftools index ${prefix}.3.vcf"
+step "bgzip + bcftools index ${prefix}.filtered.vcf"
 start_timer
-bgzip -f "${prefix}.3.vcf"
-index_vcfgz "${prefix}.3.vcf.gz"
+bgzip -f "${prefix}.filtered.vcf"
+index_vcfgz "${prefix}.filtered.vcf.gz"
 end_timer
 
 # -------------------- Normalize + csq --------------------
-step "bcftools norm -m- | bcftools csq -> ${prefix}.4.vcf.gz"
+step "bcftools norm -m- | bcftools csq -> ${prefix}.bcf.vcf.gz"
 start_timer
-bcftools norm -Ou -m- -f "$FASTA" "${prefix}.3.vcf.gz" \
-| bcftools csq -Ob --local-csq --force -o "${prefix}.4.vcf.gz" \
+bcftools norm -Ou -m- -f "$FASTA" "${prefix}.filtered.vcf.gz" \
+| bcftools csq -Ob --local-csq --force -o "${prefix}.bcf.vcf.gz" \
     --fasta-ref="$FASTA" \
     --gff="$GFF"
 end_timer
@@ -156,7 +158,7 @@ end_timer
 step "codon haplotypes (merge_codon_mutations.py) -> ${prefix}.vcf"
 start_timer
 python3 "${SCRIPT_DIR}/merge_codon_mutations.py" \
-  "${prefix}.4.vcf.gz" \
+  "${prefix}.bcf.vcf.gz" \
   "$FASTA" \
   "$GFF" \
   "${prefix}.bam" \
@@ -173,27 +175,25 @@ bgzip -f "${prefix}.vcf"
 index_vcfgz "${prefix}.vcf.gz"
 end_timer
 
-# cleanup intermediates (robust to csi/tbi)
-rmf "${prefix}.3.vcf.gz" "${prefix}.3.vcf.gz.csi" "${prefix}.3.vcf.gz.tbi"
-
 # -------------------- Packaging --------------------
 step "packaging outputs -> ${prefix}_output/"
 start_timer
 
 mkdir -p "BAM_${prefix}" "VCF_${prefix}" "${prefix}_output"
 
-mv -f "${prefix}.bam"     "BAM_${prefix}/"
+mv -f "${prefix}.bam" "BAM_${prefix}/"
 mv -f "${prefix}.bam.bai" "BAM_${prefix}/"
 
-mv -f "${prefix}_fl.vcf"     "VCF_${prefix}/"
-mv -f "${prefix}.lofreq.vcf" "VCF_${prefix}/"
-mv -f "${prefix}.4.vcf.gz"   "VCF_${prefix}/"
+mv -f "${prefix}.lofreq_filtered.vcf" "VCF_${prefix}/"
+mv -f "${prefix}.lofreq_raw.vcf" "VCF_${prefix}/"
+mv -f "${prefix}.filtered.vcf.gz" "VCF_${prefix}/"
+mv -f "${prefix}.filtered.vcf.gz.csi" "VCF_${prefix}/"
+mv -f "${prefix}.bcf.vcf.gz" "VCF_${prefix}/"
 
 mv -f "VCF_${prefix}" "${prefix}_output/"
 mv -f "BAM_${prefix}" "${prefix}_output/"
 
 mv -f "${prefix}.vcf.gz" "${prefix}_output/"
-if [[ -f "${prefix}.vcf.gz.csi" ]]; then mv -f "${prefix}.vcf.gz.csi" "${prefix}_output/"; fi
-if [[ -f "${prefix}.vcf.gz.tbi" ]]; then mv -f "${prefix}.vcf.gz.tbi" "${prefix}_output/"; fi
+mv -f "${prefix}.vcf.gz.csi" "${prefix}_output/"
 
 end_timer
