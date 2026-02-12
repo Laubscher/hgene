@@ -4,7 +4,7 @@ IFS=$'\n\t'
 
 usage() {
   cat >&2 <<'EOF'
-Usage: step_variant_calling.sh <prefix> <virus> <CPU>
+Usage: hgene_variant_call.sh <prefix> <virus> <CPU>
 
 This is a pipeline step. It expects upstream files to exist:
   - <prefix>.sam

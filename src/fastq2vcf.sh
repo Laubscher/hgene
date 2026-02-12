@@ -51,5 +51,5 @@ porechop -t "$CPU" --discard_middle -i "${prefix}.fastq" -o "${prefix}.trimmed.f
 step "Mapping to reference (map2HHV.sh)"
 bash "${SCRIPT_DIR}/map2HHV.sh" "${prefix}.trimmed.fastq" "$virus" "$CPU" "$prefix"
 
-step "Variant calling (step_variant_calling.sh)"
+step "Variant calling (hgene_variant_call.sh)"
 bash "${SCRIPT_DIR}/step_variant_calling.sh" "$prefix" "$virus" "$CPU"
