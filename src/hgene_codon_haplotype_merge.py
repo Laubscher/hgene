@@ -155,7 +155,7 @@ def _read_base_at_refpos(read, ref_pos0: int):
         base = base.translate(DNA_COMP)
     return base, qpos_at
 
-def phase_haplotypes_sites(
+def phase_haplotypes_sites(   #replace by phase_haplotypes_sites_pileup
     bam_path: str,
     chrom: str,
     sites,
@@ -240,6 +240,95 @@ def phase_haplotypes_sites(
         "dp_min": dp_min,
         "ok_min_reads": informative >= min_informative_reads,
     }
+
+def phase_haplotypes_sites_pileup(
+    bam_path: str,
+    chrom: str,
+    sites,  # list of dict: {"pos": int(1-based), "alleles": set("ACGT")}
+    min_mapq: int = 40,
+    min_baseq: int = 20,
+    min_informative_reads: int = 10,
+):
+    import pysam
+
+    # positions 1-based -> set for fast lookup
+    pos_set = {s["pos"] for s in sites}
+    sites_by_pos = {s["pos"]: s for s in sites}
+    start0 = min(pos_set) - 1
+    end0 = max(pos_set)     # pysam pileup end is 0-based exclusive typically; we’ll be safe with end0
+
+    bam = pysam.AlignmentFile(bam_path, "rb")
+
+    # read_name -> {pos: base}
+    per_read = defaultdict(dict)
+
+    # Build per-read bases at each target pos using pileup (fast C core)
+    for col in bam.pileup(
+        chrom,
+        start0,
+        end0,
+        truncate=True,
+        stepper="samtools",
+        min_mapping_quality=min_mapq,
+    ):
+        pos1 = col.reference_pos + 1
+        if pos1 not in pos_set:
+            continue
+
+        for pr in col.pileups:
+            if pr.is_del or pr.is_refskip:
+                continue
+            qpos = pr.query_position
+            if qpos is None:
+                continue
+
+            aln = pr.alignment
+            # baseQ
+            if aln.query_qualities is None:
+                continue
+            if aln.query_qualities[qpos] < min_baseq:
+                continue
+
+            b = aln.query_sequence[qpos].upper()
+            if b not in "ACGT":
+                continue
+
+            # only accept bases that are in REF/ALT set for this site
+            if b not in sites_by_pos[pos1]["alleles"]:
+                continue
+
+            per_read[aln.query_name][pos1] = b
+
+    bam.close()
+
+    # Count haplotypes across sites (ordered by position)
+    ordered_pos = sorted(pos_set)
+    hap_counts = defaultdict(int)
+    informative = 0
+    dp_pos = [0] * len(ordered_pos)
+
+    for _, d in per_read.items():
+        # must cover all positions
+        if len(d) != len(ordered_pos):
+            continue
+        informative += 1
+        hap = "".join(d[p] for p in ordered_pos)
+        hap_counts[hap] += 1
+        for j, p in enumerate(ordered_pos):
+            dp_pos[j] += 1
+
+    dp_min = min(dp_pos) if dp_pos else 0
+    return {
+        "hap_counts": dict(hap_counts),
+        "informative_reads": informative,
+        "dp_pos": dp_pos,
+        "dp_min": dp_min,
+        "ok_min_reads": informative >= min_informative_reads,
+        "ordered_pos": ordered_pos,
+    }
+
+
+
 
 def codon_ctx(chrom, pos1, fasta, cds_by_chr):
     """
@@ -430,7 +519,7 @@ def main(vcf_path, fasta_path, gff_path, bam_path,
 
         sites = sorted(by_pos.values(), key=lambda x: x["pos"])
 
-        phase_res = phase_haplotypes_sites(
+        phase_res = phase_haplotypes_sites_pileup(
             bam_path=bam_path,
             chrom=chrom,
             sites=sites,
