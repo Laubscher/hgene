@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]:-$0}" )" &> /dev/null && pwd )"
-TEST_NAME="test_04_hsv1_XX"
+TEST_NAME="test_03_hsv1_XX"
 FASTQ="${TEST_NAME}.fastq"
 
 
@@ -29,6 +29,6 @@ UL30=$(gunzip -c $VCF | tail -1 | cut -f5 -d ";" | tr -d '\n')
 
 " ]] || { echo "FAIL: VCF contains not expected BCSQ for UL30"; exit 1; }
 
-echo "OK test_04_expected"
+echo "OK test_03_expected"
 
-rm test_04_hsv1_XX.log
+rm test_03_hsv1_XX.log
