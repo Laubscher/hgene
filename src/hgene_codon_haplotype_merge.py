@@ -3,7 +3,7 @@
 hgene_codon_haplotype_merge.py
 
 - For each codon containing 2 or 3 SNV, reconstructs read-level haplotypes (patterns of R/A)
-- Emits EVERY non-reference haplotype whose frequency >= hap_af_min (default 0.10)
+- Emits every non-reference haplotype whose frequency >= hap_af_min (default 0.10)
 - AF is recalculated as: HAP_CT / HAP_DP (HAP_DP = informative_reads)
 - DP_CODON is min per-site depth across the codon positions (after MAPQ/baseQ filters)
 - Adds HAP/HAP_CT/HAP_DP and CODON_REF/CODON_ALT, AA_REF/AA_ALT, MERGED_POS/MERGED_AF, GENE in INFO
@@ -149,24 +149,31 @@ def _read_base_at_refpos(read, ref_pos0: int):
             break
     if qpos_at is None:
         return None, None
-    return read.query_sequence[qpos_at], qpos_at
+    base = read.query_sequence[qpos_at]
+    # SAM stores SEQ in read orientation; for reverse-strand alignments, complement the base
+    if read.is_reverse:
+        base = base.translate(DNA_COMP)
+    return base, qpos_at
 
-def phase_haplotypes_snvs(
+def phase_haplotypes_sites(
     bam_path: str,
     chrom: str,
-    snvs,
+    sites,
     min_mapq: int = 40,
     min_baseq: int = 20,
     min_informative_reads: int = 10,
 ):
     """
-    Reconstruct read-level haplotypes on 2-3 SNVs.
+    Reconstruct read-level haplotypes on 2-3 genomic sites (multi-allelic aware).
 
-    snvs: list of dicts with keys: pos(1-based), ref, alt
+    sites: list of dicts with keys:
+      - pos (1-based genomic)
+      - alleles: set of allowed alleles at this pos (REF + all ALTs), A/C/G/T only
+      - frame: 0/1/2 within CDS codon (with respect to codon_ref_cds returned by codon_ctx)
 
     Returns dict:
-      - hap_counts: patterns like "AR", "AA", "RRR", ... plus "OTHER"
-      - informative_reads: reads covering ALL positions with A/C/G/T and baseQ>=min_baseq (and MAPQ>=min_mapq)
+      - hap_counts: haplotypes as observed base strings like "GA", "GAC", ...
+      - informative_reads: reads covering ALL positions with baseQ>=min_baseq (and MAPQ>=min_mapq)
       - dp_pos: per-position valid depth
       - dp_min: min(dp_pos)
       - ok_min_reads: informative_reads >= min_informative_reads
@@ -174,13 +181,13 @@ def phase_haplotypes_snvs(
     if pysam is None:
         raise RuntimeError("You need to install pysam.")
 
-    pos0s = [s["pos"] - 1 for s in snvs]
+    pos0s = [s["pos"] - 1 for s in sites]
     start0 = min(pos0s)
     end0 = max(pos0s)
 
     bam = pysam.AlignmentFile(bam_path, "rb")
     hap_counts = defaultdict(int)
-    dp_pos = [0] * len(snvs)
+    dp_pos = [0] * len(sites)
     informative = 0
 
     for read in bam.fetch(chrom, start0, end0 + 1):
@@ -191,10 +198,10 @@ def phase_haplotypes_snvs(
         if read.query_qualities is None:
             continue
 
-        states = []
+        bases = []
         ok_all_positions = True
 
-        for j, s_ in enumerate(snvs):
+        for j, s_ in enumerate(sites):
             base, qpos = _read_base_at_refpos(read, s_["pos"] - 1)
             if base is None or qpos is None:
                 ok_all_positions = False
@@ -208,25 +215,20 @@ def phase_haplotypes_snvs(
                 ok_all_positions = False
                 break
 
+            # valid depth at this position for this read
             dp_pos[j] += 1
 
-            refb = s_["ref"].upper()
-            altb = s_["alt"].upper()
-            if b == refb:
-                states.append("R")
-            elif b == altb:
-                states.append("A")
-            else:
-                states.append("O")
+            if b not in s_["alleles"]:
+                ok_all_positions = False
+                break
+
+            bases.append(b)
 
         if not ok_all_positions:
             continue
 
         informative += 1
-        if "O" in states:
-            hap_counts["OTHER"] += 1
-        else:
-            hap_counts["".join(states)] += 1
+        hap_counts["".join(bases)] += 1
 
     bam.close()
     dp_min = min(dp_pos) if dp_pos else 0
@@ -276,16 +278,18 @@ def codon_ctx(chrom, pos1, fasta, cds_by_chr):
                 return (cds, codon_anchor, frame, codon)
     return None
 
-def codon_alt_from_pattern(codon_ref_cds: str, strand: str, snvs_with_frame, pattern: str) -> str:
-    """Build CODON_ALT in CDS orientation by applying only SNVs where pattern has 'A'."""
+def codon_alt_from_bases(codon_ref_cds: str, strand: str, sites, hap_bases: str) -> str:
+    """
+    Build CODON_ALT in CDS orientation by applying observed bases at each site.
+    - hap_bases: observed bases across sites in genomic orientation (A/C/G/T), same order as sites
+    - sites: each has 'frame' (0/1/2) with respect to codon_ref_cds
+    """
     cod = list(codon_ref_cds)
-    for s, st in zip(snvs_with_frame, pattern):
-        if st != "A":
-            continue
-        alt_base = s["alt"].upper()
+    for s, b in zip(sites, hap_bases):
+        bb = b.upper()
         if strand == "-":
-            alt_base = revcomp(alt_base)
-        cod[s["frame"]] = alt_base
+            bb = revcomp(bb)
+        cod[s["frame"]] = bb
     return "".join(cod)
 
 def ensure_info_headers(header_lines):
@@ -301,7 +305,7 @@ def ensure_info_headers(header_lines):
         ("AA_ALT",     '##INFO=<ID=AA_ALT,Number=1,Type=String,Description="Mutated amino acid">'),
         ("GENE",       '##INFO=<ID=GENE,Number=1,Type=String,Description="Gene/Parent/ID extracted from GFF">'),
         ("DP_CODON",   '##INFO=<ID=DP_CODON,Number=1,Type=Integer,Description="Minimum per-site depth across merged codon positions (after MAPQ/baseQ filters)">'),
-        ("HAP",        '##INFO=<ID=HAP,Number=1,Type=String,Description="Haplotype pattern across merged SNVs (R/A per site, same order as MERGED_POS)">'),
+        ("HAP",        '##INFO=<ID=HAP,Number=1,Type=String,Description="Observed bases across merged positions (same order as MERGED_POS)">'),
         ("HAP_CT",     '##INFO=<ID=HAP_CT,Number=1,Type=Integer,Description="Read count supporting this haplotype pattern">'),
         ("HAP_DP",     '##INFO=<ID=HAP_DP,Number=1,Type=Integer,Description="Informative read depth used to estimate haplotype AF">'),
     ]
@@ -412,18 +416,24 @@ def main(vcf_path, fasta_path, gff_path, bam_path,
 
         chrom, gene, strand, codon_anchor, codon_ref_cds = key
 
-        # Build SNVs with frame
-        snvs = []
+                # Build multi-allelic-aware sites (unique positions) with CDS frame
+        by_pos = {}
         for i in idxs:
             r = recs[i]
             frame = r["ctx"][2]
-            snvs.append({"pos": r["pos"], "ref": r["ref"], "alt": r["alt"], "frame": frame})
-        snvs = sorted(snvs, key=lambda x: x["pos"])
+            pos = r["pos"]
+            refb = r["ref"].upper()
+            altb = r["alt"].upper()
+            if pos not in by_pos:
+                by_pos[pos] = {"pos": pos, "frame": frame, "alleles": set([refb])}
+            by_pos[pos]["alleles"].add(altb)
 
-        phase_res = phase_haplotypes_snvs(
+        sites = sorted(by_pos.values(), key=lambda x: x["pos"])
+
+        phase_res = phase_haplotypes_sites(
             bam_path=bam_path,
             chrom=chrom,
-            snvs=snvs,
+            sites=sites,
             min_mapq=min_mapq,
             min_baseq=min_baseq,
             min_informative_reads=min_informative_reads,
@@ -432,15 +442,12 @@ def main(vcf_path, fasta_path, gff_path, bam_path,
         hap_counts = phase_res["hap_counts"]
         informative = phase_res["informative_reads"]
         dp_min = phase_res["dp_min"]
-        ref_pattern = "R" * len(snvs)
-        positions = [s["pos"] for s in snvs]
+        positions = [s["pos"] for s in sites]
 
         # Log distribution
         if informative > 0:
             items = []
             for pat, ct in sorted(hap_counts.items(), key=lambda kv: (-kv[1], kv[0])):
-                if pat == "OTHER":
-                    continue
                 items.append(f"{pat}:{ct}:{ct/informative:.3f}")
             sys.stderr.write(
                 f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] "
@@ -458,15 +465,17 @@ def main(vcf_path, fasta_path, gff_path, bam_path,
 
         sys.stderr.flush()
 
-        # Select haplotypes to emit
+                # Select haplotypes to emit (skip reference haplotype by comparing CODON_ALT to CODON_REF)
         hap_patterns = []
         if informative > 0 and phase_res.get("ok_min_reads"):
-            for pat, ct in hap_counts.items():
-                if pat in ("OTHER", ref_pattern):
-                    continue
+            for hap, ct in hap_counts.items():
                 af_hap = ct / informative
-                if af_hap >= hap_af_min:
-                    hap_patterns.append((pat, int(ct), float(af_hap)))
+                if af_hap < hap_af_min:
+                    continue
+                codon_alt_cds = codon_alt_from_bases(codon_ref_cds, strand, sites, hap)
+                if codon_alt_cds == codon_ref_cds:
+                    continue  # don't emit reference haplotype
+                hap_patterns.append((hap, int(ct), float(af_hap), codon_alt_cds))
 
         if not hap_patterns:
             sys.stderr.write(
@@ -498,13 +507,20 @@ def main(vcf_path, fasta_path, gff_path, bam_path,
             idx0 = (cds["end"] - codon_anchor) - cds["phase"]
         aa_pos = (idx0 // 3) + 1
 
-        merged_pos_str = ",".join(str(s["pos"]) for s in snvs)
-        pos_to_af = {recs[i]["pos"]: recs[i]["af"] for i in idxs}
-        merged_af_str = ",".join(str(pos_to_af.get(s["pos"])) for s in snvs)
+        merged_pos_str = ",".join(str(s["pos"]) for s in sites)
+
+        # MERGED_AF: per-position AFs; if multiple ALTs exist at same POS, join AFs with '|'
+        pos_to_afs = defaultdict(list)
+        for i in idxs:
+            pos_to_afs[recs[i]["pos"]].append(recs[i]["af"])
+        merged_af_parts = []
+        for s in sites:
+            afs = pos_to_afs.get(s["pos"], [])
+            merged_af_parts.append("|".join(str(a) for a in afs))
+        merged_af_str = ",".join(merged_af_parts)
 
         out_lines = []
-        for pat, ct, af_hap in sorted(hap_patterns, key=lambda x: x[2], reverse=True):
-            codon_alt_cds = codon_alt_from_pattern(codon_ref_cds, strand, snvs, pat)
+        for hap, ct, af_hap, codon_alt_cds in sorted(hap_patterns, key=lambda x: x[2], reverse=True):
             alt_mnv = codon_alt_cds if strand == "+" else revcomp(codon_alt_cds)
 
             tpl_fields = tpl_fields_base[:]
@@ -522,7 +538,7 @@ def main(vcf_path, fasta_path, gff_path, bam_path,
             info_d["AA_REF"] = aa(codon_ref_cds)
             info_d["AA_ALT"] = aa(codon_alt_cds)
             info_d["GENE"] = gene
-            info_d["HAP"] = pat
+            info_d["HAP"] = hap
             info_d["HAP_CT"] = str(ct)
             info_d["HAP_DP"] = str(informative)
 
