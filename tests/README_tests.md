@@ -125,7 +125,7 @@ Expected: - No merge
 
 ------------------------------------------------------------------------
 
-# 5. Advanced Population Scenarios
+# 4. Advanced Population Scenarios
 
 These tests validate complex haplotype reconstruction.
 
