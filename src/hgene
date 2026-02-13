@@ -7,13 +7,16 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && p
 usage() {
   cat >&2 <<'USAGE'
 Usage:
-  hgene -v <virus> [-c <cpu>] <fastqPrefix>
+  hgene -v <virus> [-c <cpu>] <prefix|prefix.fastq>
 
 Arguments:
-  -v <virus>       Virus reference key (e.g. HHV1, HHV2, HHV5)
+  -v <virus>       Virus reference key (e.g. HHV1, HHV2)
   -c <cpu>         Threads (default: nproc)
-  <fastqPrefix>    Prefix without extension (expects <prefix>.fastq)
+  <input>          Prefix or a .fastq file (uncompressed)
 
+Notes:
+  - .fq is not supported
+  - .gz is not supported
 USAGE
   exit 2
 }
@@ -24,7 +27,6 @@ info() { log "INFO" "$*"; }
 step() { log "STEP" "$*"; }
 warn() { log "WARN" "$*"; }
 error() { log "ERROR" "$*"; }
-
 die() { error "$*"; exit 1; }
 
 # -------------------- args --------------------
@@ -42,9 +44,26 @@ while getopts ":hv:c:" opt; do
 done
 shift $((OPTIND-1))
 
-prefix="${1:-}"
-[[ -n "$prefix" ]] || usage
+input="${1:-}"
+[[ -n "$input" ]] || usage
 [[ -n "$virus" ]] || die "Missing -v <virus> (use -h)"
+
+# Refuse gz
+[[ "$input" != *.gz ]] || die "Compressed FASTQ (.gz) not supported. Provide uncompressed .fastq."
+
+# Normalize prefix: accept either "sample" or "sample.fastq"
+prefix="$input"
+if [[ "$input" == *.fastq ]]; then
+  prefix="${input%.fastq}"
+fi
+
+# -------------------- check virus exists --------------------
+DB_DIR="${SCRIPT_DIR}/../db"
+FASTA="${DB_DIR}/${virus}.fasta"
+GFF="${DB_DIR}/${virus}.gff"
+
+[[ -s "$FASTA" ]] || die "Virus reference not found: ${FASTA}"
+[[ -s "$GFF"   ]] || die "Virus annotation not found: ${GFF}"
 
 # -------------------- global log (stdout+stderr) --------------------
 LOG="${prefix}.log"
@@ -61,7 +80,7 @@ if [[ -n "${SINGULARITY_CONTAINER:-}" ]]; then
   fi
 fi
 
-# Sanity check input
+# -------------------- input FASTQ check --------------------
 [[ -s "${prefix}.fastq" ]] || die "Input FASTQ not found: ${prefix}.fastq"
 
 step "Running hgene_main.sh"
