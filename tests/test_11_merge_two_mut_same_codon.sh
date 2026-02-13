@@ -84,8 +84,9 @@ grep -Fq "MERGED_POS=${MERGED_POS_EXPECTED}" "$OUT" || {
 }
 
 # 3) Must contain haplotype info fields (at least HAP + HAP_DP + HAP_CT)
-grep -Eq 'HAP=[RAO]{2,3}' "$OUT" || {
-  echo "FAIL: HAP field missing (expected HAP=.. in INFO)"
+# New format: HAP is observed bases, e.g. HAP=GA (not R/A/O anymore)
+grep -Eq 'HAP=[ACGT]{2}\b' "$OUT" || {
+  echo "FAIL: HAP field missing (expected HAP=<2 bases> in INFO)"
   echo "---- OUT ----"; cat "$OUT"
   exit 1
 }
