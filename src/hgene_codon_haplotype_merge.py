@@ -387,7 +387,8 @@ def ensure_info_headers(header_lines):
 
     defs = [
         ("MERGED_POS", '##INFO=<ID=MERGED_POS,Number=1,Type=String,Description="Original SNV positions merged into one codon variant">'),
-        ("MERGED_AF",  '##INFO=<ID=MERGED_AF,Number=1,Type=String,Description="AFs of input SNV records from the input VCF (same order as MERGED_POS; multiple ALTs at same POS are joined with \"|\" )">'),        ("CODON_REF",  '##INFO=<ID=CODON_REF,Number=1,Type=String,Description="Reference codon (CDS orientation)">'),
+        ("MERGED_AF",  '##INFO=<ID=MERGED_AF,Number=1,Type=String,Description="AFs of input SNV records from the input VCF (same order as MERGED_POS; multiple ALTs at same POS are joined with | )">'),
+        ("CODON_REF",  '##INFO=<ID=CODON_REF,Number=1,Type=String,Description="Reference codon (CDS orientation)">'),
         ("CODON_ALT",  '##INFO=<ID=CODON_ALT,Number=1,Type=String,Description="Mutated codon (CDS orientation)">'),
         ("AA_REF",     '##INFO=<ID=AA_REF,Number=1,Type=String,Description="Reference amino acid">'),
         ("AA_ALT",     '##INFO=<ID=AA_ALT,Number=1,Type=String,Description="Mutated amino acid">'),
