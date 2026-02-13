@@ -56,6 +56,56 @@ DB_DIR="${SCRIPT_DIR}/../db"
 FASTA="${DB_DIR}/${virus}.fasta"
 GFF="${DB_DIR}/${virus}.gff"
 
+# --- Provenance: reference accession via .info + FASTA SHA tracking ---
+# Looks for: <DB_DIR>/<virus>.info  (same stem as <virus>.fasta)
+# Recommended keys:
+#   ACCESSION=KX035107.1
+#   FASTA_SHA256=<expected sha>
+# Optional:
+#   GFF_SHA256=<expected sha>
+
+REF_INFO="${HG_REF_INFO:-${DB_DIR}/${virus}.info}"
+
+REF_FASTA_SHA256_ACTUAL="$(sha256sum "$FASTA" | awk '{print $1}')"
+REF_GFF_SHA256_ACTUAL="$(sha256sum "$GFF" | awk '{print $1}')"
+
+REF_FASTA_SHA256_EXPECTED=""
+REF_GFF_SHA256_EXPECTED=""
+REF_INFO_STATUS="no_info"
+REF_ACCESSION="sha256:${REF_FASTA_SHA256_ACTUAL}"
+
+if [[ -s "$REF_INFO" ]]; then
+  # shellcheck disable=SC1090
+  source "$REF_INFO" || true
+  REF_INFO_STATUS="loaded"
+  REF_FASTA_SHA256_EXPECTED="${FASTA_SHA256:-}"
+  REF_GFF_SHA256_EXPECTED="${GFF_SHA256:-}"
+
+  if [[ -n "${REF_FASTA_SHA256_EXPECTED}" && "$REF_FASTA_SHA256_ACTUAL" == "$REF_FASTA_SHA256_EXPECTED" ]]; then
+    REF_INFO_STATUS="ok"
+    if [[ -n "${ACCESSION:-}" ]]; then
+      REF_ACCESSION="$ACCESSION"
+    else
+      # info exists and sha matches, but accession missing -> keep sha identifier
+      REF_ACCESSION="sha256:${REF_FASTA_SHA256_ACTUAL}"
+    fi
+  else
+    REF_INFO_STATUS="fasta_sha_mismatch"
+    REF_ACCESSION="sha256:${REF_FASTA_SHA256_ACTUAL}"
+  fi
+fi
+
+info "HG_VERSION=${HG_VERSION:-unknown}"
+info "REF_INFO=$REF_INFO"
+info "REF_INFO_STATUS=$REF_INFO_STATUS"
+info "REF_ACCESSION=$REF_ACCESSION"
+info "REF_FASTA_SHA256=$REF_FASTA_SHA256_ACTUAL"
+[[ -n "$REF_FASTA_SHA256_EXPECTED" ]] && info "REF_FASTA_SHA256_EXPECTED=$REF_FASTA_SHA256_EXPECTED"
+info "REF_GFF_SHA256=$REF_GFF_SHA256_ACTUAL"
+[[ -n "$REF_GFF_SHA256_EXPECTED" ]] && info "REF_GFF_SHA256_EXPECTED=$REF_GFF_SHA256_EXPECTED"
+# ------------------------------------------------------------------
+
+
 [[ -s "${prefix}.sam" ]] || die "Input SAM not found: ${prefix}.sam"
 [[ -s "$FASTA" ]] || die "Reference FASTA not found: $FASTA"
 [[ -s "$GFF"   ]] || die "Reference GFF not found:   $GFF"
@@ -168,6 +218,31 @@ python3 "${SCRIPT_DIR}/hgene_codon_haplotype_merge.py" \
   20 \
   > "${prefix}.vcf"
 end_timer
+
+# --- Add provenance lines to final VCF header (plain VCF before bgzip) ---
+if command -v bcftools >/dev/null 2>&1; then
+  tmp_vcf="${prefix}.vcf.hgene.tmp"
+  bcftools annotate -h <(cat <<EOF
+##hgene_version=${HG_VERSION:-unknown}
+##hgene_ref_info=${REF_INFO}
+##hgene_ref_info_status=${REF_INFO_STATUS}
+##hgene_ref_accession=${REF_ACCESSION}
+##hgene_ref_fasta_sha256=${REF_FASTA_SHA256_ACTUAL}
+##hgene_ref_gff_sha256=${REF_GFF_SHA256_ACTUAL}
+EOF
+  if [[ -n "${REF_FASTA_SHA256_EXPECTED:-}" ]]; then echo "##hgene_ref_fasta_sha256_expected=${REF_FASTA_SHA256_EXPECTED}"; fi
+  if [[ -n "${REF_GFF_SHA256_EXPECTED:-}" ]]; then echo "##hgene_ref_gff_sha256_expected=${REF_GFF_SHA256_EXPECTED}"; fi
+  cat <<EOF2
+##hgene_ref_fasta=${FASTA}
+##hgene_ref_gff=${GFF}
+EOF2
+  ) -Ov -o "$tmp_vcf" "${prefix}.vcf"
+  mv -f "$tmp_vcf" "${prefix}.vcf"
+else
+  warn "bcftools not found: skipping hgene provenance header injection into ${prefix}.vcf"
+fi
+# -------------------------------------------------------------------
+
 
 step "bgzip + bcftools index final -> ${prefix}.vcf.gz"
 start_timer

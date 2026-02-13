@@ -1,5 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+
+get_hg_version() {
+  local here verfile
+  here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" &>/dev/null && pwd)"
+
+  verfile="$here/VERSION"
+  if [[ -s "$verfile" ]]; then
+    tr -d '\r\n' < "$verfile"
+    return 0
+  fi
+
+  # fallback: git describe only if available (dev mode)
+  if command -v git >/dev/null 2>&1; then
+    if git -C "$here" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      git -C "$here" describe --tags --always --dirty 2>/dev/null && return 0
+    fi
+  fi
+
+  echo "unknown"
+}
+
+HG_VERSION="$(get_hg_version)"
+export HG_VERSION
+
+if declare -F info >/dev/null 2>&1; then
+  info "HG_VERSION=$HG_VERSION"
+fi
+# ------------------------------------------------------------------
+
 IFS=$'\n\t'
 
 # Args:
