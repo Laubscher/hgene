@@ -1,0 +1,137 @@
+---
+title: "Rapport d'analyse d'un fichier BAM"
+output:
+  html_document: 
+    theme: default
+    highlight: espresso
+params:
+  #input_bam_file: "data/HHV1/bam/240222-HE.HHV1.filt.10k.bam"
+  #input_bam_file: data/HHV1/fasta/230330_40970504_BLC_HSV1.asm.bam
+  #input_bam_file: "data/HHV1/fasta/test_inframe_indel.asm.bam"
+  #input_bam_file: "data/HHV1/fasta/test_inframe_indel.asm.bam"
+  #input_bam_file: "data/HHV1/fasta/test_no_mutation.asm.bam"
+  #input_bam_file: "data/HHV1/vcf/RUN0_240618_0123456789_HHV1_AA.sorted.bam"
+  input_bam_file: "data/HHV1/bam/240222-HE.HHV1.bam"
+---
+
+
+ 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(Biostrings)
+library(GenomicAlignments)
+
+
+highlight_cell_spec <- function(v,msk,bg="red") {
+  kableExtra::cell_spec(v,
+      background = ifelse(msk,bg,""),
+      color = ifelse(msk,"white","black"),
+      bold = msk
+  )
+}
+
+kable_style <- function(...,escape=FALSE,row.names = FALSE,align = "c") {
+  kableExtra::kbl(...,escape = escape,row.names = row.names,align = align) |>
+   kableExtra::kable_classic("striped",full_width=FALSE)
+  #knitr::kable(...,escape = escape,align = align,row.names = row.names)
+}
+```
+
+
+|                                   |                                         |
+|-----------------------------------|-----------------------------------------|
+| Nom du fichier BAM analysé:       | ``r params$input_bam_file``             |
+
+Ce rapport permet d'obtenir un controle qualité du mapping des reads ONT
+sur une référence. Il permet notemment de s'assurer que tout le génome de 
+référence est couvert avec une profondeur de lecture suffisante. 
+Une couverture suffisante est nécessaire pour une bonne détéction des mutations 
+en avale.
+
+
+# Résumé du séquençage
+
+```{r results="asis"}
+bam <- readGAlignments(params$input_bam_file,use.names = TRUE,param = ScanBamParam(what=c("mapq","qual")))
+cov <- coverage(bam)
+aln <- tibble(
+  contig = as.factor(seqnames(bam)),
+  reads_sizes = cigarWidthAlongQuerySpace(cigar(bam)),
+  reads_avg_qual = mean(as(mcols(bam)$qual,"IntegerList")),
+  mapq = mcols(bam)$mapq
+)
+
+data.frame(
+    num_read = length(bam),
+    num_bp = sum(aln$reads_sizes),
+    avg_read_size = mean(aln$reads_sizes),
+    min_read_size = min(aln$reads_sizes),
+    median_read_size = median(aln$reads_sizes),
+    max_read_size = max(aln$reads_sizes),
+    avg_read_quality = mean(aln$reads_avg_qual)
+) |> 
+  kable_style(caption = "Caractéristique des séquences alignées")
+```
+
+Légende:
+
+- `num_read`: Nombre de reads utilisé dans l'analyse.
+- `num_bp`: Nombre de basé séquncées
+- `avg_read_size`: Taille moyenne des reads
+- `min_read_size`,`median_read_size`,`max_read_size`: Taille minimum/median/maximum des reads.
+- `avg_read_quality`: Quality moyenne des bases séquencés tel que déterminé par nanopore. Une qualité de 20 correspond à une probabilité d'erreur de 1%; une qualité de 30 à une probabilité de 0.1%; 40=0.01%; etc...
+
+
+# Résumé de la couverture
+```{r results="asis"}
+data.frame(
+  avg_cov = mean(cov),
+  min_cov = min(cov),
+  num_0x_bp = sum(cov<=0),
+  num_20x_bp = sum(cov<=20)
+) |> 
+  mutate(across(c(num_0x_bp,num_20x_bp),~highlight_cell_spec(.x,.x>0))) |>
+  kable_style(caption = "Couverture des références",row.names = TRUE)
+```
+Légende:
+
+ - `avg_cov`: Couverture moyenne des références
+ - `min_cov`: Couverture minimum observée sur toute la référence
+ - `num_0x_bp`: Le nombre de base de la référence qui ne sont absolument pas couverte par des reads.
+ - `num_20x_bp`: Le nombre de base de la référence qui ne sont couverte avec moins de 20x de couverture.
+
+Note: 
+
+- En présence d'une faible couverture, il est possible que des mutations soient manquées dans ces régions.
+
+
+
+# Résumé Graphique {.tabset}
+
+## Reads
+```{r}
+ggplot(aln,aes(x=reads_sizes,y=reads_avg_qual,color=contig)) + 
+  geom_point(size=1) + 
+  xlab("Read size (bp)") + ylab("Average read quality") +
+  ggtitle("Read quality / Read size") + theme(legend.position="bottom") + 
+  scale_color_brewer(palette = "Set1") +
+  theme_bw()
+```
+
+
+## Couverture des références
+
+```{r}
+as(cov,"GRanges") |>
+  as.data.frame() |>
+  ggplot() + 
+    facet_wrap(seqnames~.,scales = "free",ncol=1) +
+    geom_rect(aes(xmin=start-0.5,xmax=end+0.5,ymin=0,ymax=score),fill="black",color="black") + 
+    ylab("read depth") + xlab("genomic position") + expand_limits(y=0) + 
+    ggtitle("Couverture de la reference") + 
+    theme_bw()
+```
+
+
+
