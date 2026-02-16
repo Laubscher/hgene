@@ -32,7 +32,7 @@ case "$virus" in
 esac
 
 OUTDIR="${prefix}_output"
-REPORT_DIR="${OUTDIR}/report"
+REPORT_DIR="${OUTDIR}/REPORT_${prefix}"
 mkdir -p "$REPORT_DIR"
 
 VCF_SRC="${OUTDIR}/${prefix}.vcf.gz"
@@ -95,4 +95,3 @@ rm -f "$(basename "$VCF_SRC")" "$(basename "$VCF_CSI")" "$(basename "$BAM_SRC")"
 popd >/dev/null
 
 info "Virotyper reports written to ${REPORT_DIR}/"
-

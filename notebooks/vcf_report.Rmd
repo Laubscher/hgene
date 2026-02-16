@@ -18,13 +18,36 @@ donnée de mutations conférants des résistances à des antiviraux.
 
 **Requirements:** Le fichier VCF d'entré doit contenir les champs INFO/DP,INFO/AF,INFO/BCSQ.
 
-**Note:** Le rapport du fichier BAM correspondant au fichier VCF devrait être inspécté avant celui-ci pour s'assurer que les séquences de référence sont entièrement couvertes par le séquencage. En effet, il est possible que des mutations soient manquées dans le VCF dans des mutations faiblement couverte en séquencage.
+**Note:** Le rapport du fichier BAM correspondant au fichier VCF devrait être inspécté avant celui-ci pour s'assurer que les séquences de référence sont entièrement couvertes par le séquencage. En effet, il est possible que des mutations soient manquées dans le VCF en cas de couverture insuffisante de certaines régions.
 
  
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 library(tidyverse)
 library(Rsamtools)
+
+get_vcf_meta <- function(vcf_path, key) {
+  # lit uniquement le header
+  con <- gzfile(vcf_path, open = "rt")
+  on.exit(close(con), add = TRUE)
+
+  out <- NA_character_
+  repeat {
+    line <- readLines(con, n = 1)
+    if (length(line) == 0) break
+    if (!startsWith(line, "##")) break  # fini le header meta
+    prefix <- paste0("##", key, "=")
+    if (startsWith(line, prefix)) {
+      out <- sub(prefix, "", line, fixed = TRUE)
+      break
+    }
+  }
+  out
+}
+
+hgene_version      <- get_vcf_meta(params$input_vcf_file, "hgene_version")
+ref_accession      <- get_vcf_meta(params$input_vcf_file, "hgene_ref_accession")
+ref_info_status    <- get_vcf_meta(params$input_vcf_file, "hgene_ref_info_status")
 
 
 # Parse a BCSQ string and return a data.frame()
@@ -54,7 +77,6 @@ kable_style <- function(...,escape=FALSE,row.names = FALSE,align = "c") {
 # read a VCF file into a table
 query_vcf <- function(vcf_file) {
   mut <- "bcftools query --format '%CHROM\t%POS\t%REF\t%ALT\t%BCSQ\t%DP\t%AF\n' '{vcf_file}'" |>
-  #mut <- "bcftools query --format '%CHROM\t%POS\t%REF\t%ALT\t%BCSQ\t%DP\t%AF\n' '{vcf_file}'" |>
     str_glue() |>
     pipe() |>
     read.table(
@@ -65,14 +87,16 @@ query_vcf <- function(vcf_file) {
     as_tibble() |>
     mutate(DNA_CHANGE = str_glue("{POS}{REF}>{ALT}"))
 }
+
 ```
 
 |                                   |                                         |
 |-----------------------------------|-----------------------------------------|
 | Nom de la database de résistance: | ``r params$input_db_dir``               |
+| Numéro d'accession référence:     | ``r ref_accession``                     |
+| Version du logiciel:              | ``r hgene_version``                     |
 | Nom du fichier VCF analysé:       | ``r params$input_vcf_file``             |
 | Nom du rapport produit:           | ``r params$output_docx_report``         |
-
 
 ```{r,message=FALSE}
 # Load data
@@ -227,7 +251,10 @@ docx_template <- file.path(params$input_db_dir,"template.docx")
 doc <- read_docx(docx_template) |>
   body_replace_all_text("SEQDATE",format(filemeta$run_date,"%Y-%m-%d"),fixed = TRUE) |>
   body_replace_all_text("IDTUBE",filemeta$tube_id,fixed = TRUE) |>
-  body_replace_all_text("IDPATIENT",filemeta$initials_patient,fixed = TRUE)
+  body_replace_all_text("IDPATIENT",filemeta$initials_patient,fixed = TRUE) |>
+  body_replace_all_text("_ACCESSIONNUMBER_",ref_accession, fixed = TRUE) |>
+  body_replace_all_text("_VERSIONLOGICIEL_",hgene_version, fixed = TRUE)
+
 doc <- body_replace_all_text(doc,"CONCLUSIONSDELANALYSE",concluding_sentence, fixed = TRUE)
 
 MUT <- split(MUT,factor(MUT$gene,seqlevels(fa)))
