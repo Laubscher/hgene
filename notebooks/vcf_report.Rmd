@@ -6,12 +6,8 @@ output:
     highlight: espresso
 params:
   input_db_dir: "data/db/hsv1"
-  #input_vcf_file: "data/HHV1/bam/240222-HE.HHV1.filt.10k.vcf.gz"
-  #input_vcf_file: data/HHV1/fasta/230330_40970504_BLC_HSV1.asm.vcf.gz
-  #input_vcf_file: "data/HHV1/fasta/test_inframe_indel.asm.vcf.gz"
-  #input_vcf_file: "data/HHV1/fasta/test_inframe_indel.asm.vcf.gz"
-  #input_vcf_file: "data/HHV1/fasta/test_no_mutation.asm.vcf.gz"
-  input_vcf_file: "data/HHV1/vcf/RUN0_240618_0123456789_HHV1_AA.vcf.gz"
+  input_vcf_file: ""
+  input_fasta: ""
   output_docx_report: ""
 ---
 
@@ -81,7 +77,7 @@ query_vcf <- function(vcf_file) {
 ```{r,message=FALSE}
 # Load data
 db <- readxl::read_xlsx(file.path(params$input_db_dir,"resistances.chk.xlsx"))
-fa <- FaFile(file.path(params$input_db_dir,"ref.fasta"))
+fa <- FaFile(file.path(params$input_fasta))
 mut <- query_vcf(params$input_vcf_file)
 
 # Parse BCSQ

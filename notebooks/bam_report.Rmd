@@ -5,13 +5,7 @@ output:
     theme: default
     highlight: espresso
 params:
-  #input_bam_file: "data/HHV1/bam/240222-HE.HHV1.filt.10k.bam"
-  #input_bam_file: data/HHV1/fasta/230330_40970504_BLC_HSV1.asm.bam
-  #input_bam_file: "data/HHV1/fasta/test_inframe_indel.asm.bam"
-  #input_bam_file: "data/HHV1/fasta/test_inframe_indel.asm.bam"
-  #input_bam_file: "data/HHV1/fasta/test_no_mutation.asm.bam"
-  #input_bam_file: "data/HHV1/vcf/RUN0_240618_0123456789_HHV1_AA.sorted.bam"
-  input_bam_file: "data/HHV1/bam/240222-HE.HHV1.bam"
+  input_bam_file: ""
 ---
 
 

@@ -16,7 +16,7 @@ virus="${1:-}"; prefix="${2:-}"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
 
-VT_ROOT="${SCRIPT_DIR}/../"
+VT_ROOT="$(cd -- "${SCRIPT_DIR}/../" && pwd)"
 
 # Map virus key -> virotyper DB_ID
 case "$virus" in
@@ -70,6 +70,7 @@ Rscript -e "rmarkdown::render(
   params=list(
     input_vcf_file='${VCF_LOCAL}',
     input_db_dir='${VT_ROOT}/data/db/${DB_ID}',
+    input_fasta='${VT_ROOT}/db/${virus}.fasta',
     output_docx_report='${prefix}.vcf.gz.${DB_ID}.docx'
   ),
   knit_root_dir='${VT_ROOT}',
