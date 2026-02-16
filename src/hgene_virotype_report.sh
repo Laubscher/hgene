@@ -11,6 +11,12 @@ EOF
   exit 2
 }
 
+timestamp() { date "+%Y-%m-%d %H:%M:%S"; }
+log() { local level="$1"; shift; echo "[$(timestamp)] [$level] $*"; }
+info() { log "INFO" "$*"; }
+step() { log "STEP" "$*"; }
+error() { log "ERROR" "$*"; }
+
 virus="${1:-}"; prefix="${2:-}"
 [[ -n "$virus" && -n "$prefix" ]] || usage
 
@@ -88,5 +94,5 @@ rm -f "$(basename "$VCF_SRC")" "$(basename "$VCF_CSI")" "$(basename "$BAM_SRC")"
 
 popd >/dev/null
 
-echo "OK: virotyper reports written to ${REPORT_DIR}/"
+info "Virotyper reports written to ${REPORT_DIR}/"
 
