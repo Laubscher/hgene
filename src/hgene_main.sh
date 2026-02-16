@@ -83,3 +83,8 @@ bash "${SCRIPT_DIR}/hgene_map.sh" "${prefix}.trimmed.fastq" "$virus" "$CPU" "$pr
 
 step "Variant calling (hgene_variant_call.sh)"
 bash "${SCRIPT_DIR}/hgene_variant_call.sh" "$prefix" "$virus" "$CPU"
+
+if [[ "${virus}" == "HHV1" || "${virus}" == "HHV2" ]]; then
+  step "virotyper report"
+  bash "${SCRIPT_DIR}/hgene_virotype_report.sh" "${virus}" "${prefix}"
+fi
