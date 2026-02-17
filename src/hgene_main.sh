@@ -84,22 +84,16 @@ bash "${SCRIPT_DIR}/hgene_map.sh" "${prefix}.trimmed.fastq" "$virus" "$CPU" "$pr
 step "Variant calling (hgene_variant_call.sh)"
 bash "${SCRIPT_DIR}/hgene_variant_call.sh" "$prefix" "$virus" "$CPU"
 
-ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." >/dev/null 2>&1 && pwd)"
-
 
 # --- Auto user template based on virus ---
+
 HG_TEMPLATE_DOCX=""
 
+TEMPLATE_ROOT="${HG_TEMPLATE_ROOT:-$HOME/template}"
 case "$virus" in
-  HHV1)
-    CANDIDATE="${ROOT_DIR}/template/hsv1/template.docx"
-    ;;
-  HHV2)
-    CANDIDATE="${ROOT_DIR}/template/hsv2/template.docx"
-    ;;
-  *)
-    CANDIDATE=""
-    ;;
+  HHV1) CANDIDATE="${TEMPLATE_ROOT}/hsv1/template.docx" ;;
+  HHV2) CANDIDATE="${TEMPLATE_ROOT}/hsv2/template.docx" ;;
+  *) CANDIDATE="" ;;
 esac
 
 if [[ -n "$CANDIDATE" && -s "$CANDIDATE" ]]; then

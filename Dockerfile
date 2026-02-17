@@ -1,4 +1,7 @@
-FROM bioconductor/bioconductor_docker:3.19 as base
+FROM bioconductor/bioconductor_docker:3.19 AS base
+
+RUN R -q -e "install.packages(c('tidyverse','rmarkdown','knitr','Biostrings','GenomicAlignments','Rsamtools','kableExtra','officer'), repos='https://cloud.r-project.org')"
+RUN R -q -e "BiocManager::install(c('Biostrings','Rsamtools','GenomicRanges','GenomeInfoDb','GenomicAlignments','kableExtra','officer'), ask=FALSE, update=FALSE)"
 
 # Install packages dependencies
 RUN apt-get update && apt-get install -y \
@@ -16,7 +19,7 @@ RUN apt-get update && apt-get install -y \
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 # samtools
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-FROM base as samtools
+FROM base AS samtools
 RUN mkdir -p /app \
    && curl -kL https://github.com/samtools/samtools/releases/download/1.19.2/samtools-1.19.2.tar.bz2 \
    | tar -C /app --strip-components=1 -jxf -
@@ -25,7 +28,7 @@ RUN cd /app && ./configure && make -j4
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 # bcftools
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-FROM base as bcftools
+FROM base AS bcftools
 RUN mkdir -p /app \
    && curl -kL https://github.com/samtools/bcftools/releases/download/1.19/bcftools-1.19.tar.bz2 \
    | tar -C /app --strip-components=1 -jxf -
@@ -34,7 +37,7 @@ RUN cd /app && ./configure && make -j4
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 # htslib
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-FROM base as htslib
+FROM base AS htslib
 RUN mkdir -p /app \
    && curl -kL https://github.com/samtools/htslib/releases/download/1.19.1/htslib-1.19.1.tar.bz2 \
    | tar -C /app --strip-components=1 -jxf -
@@ -45,7 +48,7 @@ RUN cd /app && ./configure && make -j4 \
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 # minimap2
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-FROM base as minimap2
+FROM base AS minimap2
 RUN mkdir -p /app \
    && curl -kL https://github.com/lh3/minimap2/releases/download/v2.27/minimap2-2.27.tar.bz2 \
    | tar -C /app --strip-components=1 -jxf -
@@ -60,7 +63,7 @@ RUN cd /app \
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 # Main app
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-FROM base as main
+FROM base AS main
 
 RUN apt-get update && apt-get install -y \
       seqtk \
@@ -77,12 +80,15 @@ RUN apt-get update && apt-get install -y \
       bowtie \
       bowtie2 \
       python3 \
+      python3-pip \
       fastqc \
       cutadapt \
       subread \
       salmon \
       porechop \
 && rm -rf /var/cache/apt/* /var/lib/apt/lists/*; ln -s /usr/bin/python3 /usr/bin/python
+
+RUN pip3 install --no-cache-dir pysam==0.22.0
 
 # minimap + (k8/paftools.js)
 #COPY --from=k8 /app/k8/k8 /usr/local/bin/
@@ -119,9 +125,14 @@ COPY --from=htslib /app/htslib.pc /usr/lib/pkgconfig/
 RUN ln -sf libhts.so.1.19.1 /usr/lib/libhts.so \
  && ln -sf libhts.so.1.19.1 /usr/lib/libhts.so.3
 
+
 COPY --chmod=755 bin/* /usr/local/bin/
 COPY --chmod=755 src/* /usr/local/bin/
 COPY --chmod=755 db/* /usr/local/db/
+COPY --chmod=755 notebooks/* /usr/local/notebooks/
+COPY data/db/ /usr/local/data/db/
+COPY LICENSE.txt /usr/local/share/licenses/hgene/LICENSE
+
    
 ENV PATH="/usr/local/bin:${PATH}"
 
@@ -138,5 +149,5 @@ LABEL org.opencontainers.image.title="hsv-hgene" \
       org.opencontainers.image.licenses="MIT"
 
 # Makes `singularity run <image>.sif ...` work (runs hgene by default)
-ENTRYPOINT ["Hgene"]
+ENTRYPOINT ["hgene"]
 CMD ["--help"]

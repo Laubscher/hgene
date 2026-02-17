@@ -7,7 +7,10 @@ Dans le dossier du projet :
 1. **Construire l'image Docker** :
 
    ```
-   sudo docker build -t hgene .
+   sudo docker build -t hgene:1.0.X \
+  --build-arg VERSION=1.0.X \
+  --build-arg VCS_REF="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+  --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
    ```
 
 2. **Sauvegarder l'image Docker dans un fichier `.tar`** :
@@ -27,12 +30,12 @@ Dans le dossier du projet :
 Exécutez le conteneur Singularity avec les options suivantes :
 
 ```
-singularity exec hgene.sif Hgene -v [VIRUS] [fastqPrefix] [CPU]
+singularity exec hgene.sif hgene -v <VIRUS> -c [CPU] <fastq>
 ```
 
 ### Options disponibles
 
 - **-h** : Affiche cette aide.
 - **-v** : Spécifie le virus (par exemple, HHV1, HHV2).
-- **[fastqPrefix]** : Préfixe des fichiers FASTQ.
-- **[nb de CPU]** : Nombre de CPU à utiliser.
+- **-c** : Nombre de CPU à utiliser.
+- **<fastq>** : Préfixe du fichier FASTQ.

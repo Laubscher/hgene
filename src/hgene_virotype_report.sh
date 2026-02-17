@@ -52,8 +52,8 @@ else
 fi
 
 
-
-OUTDIR="${prefix}_output"
+RUN_DIR="$(pwd)"
+OUTDIR="${RUN_DIR}/${prefix}_output"
 REPORT_DIR="${OUTDIR}/REPORT_${prefix}"
 mkdir -p "$REPORT_DIR"
 
@@ -72,49 +72,40 @@ BAM_BAI="${BAM_SRC}.bai"
 [[ -f "${VT_ROOT}/notebooks/vcf_report.Rmd" ]] || { echo "ERROR: missing Rmd: ${VT_ROOT}/notebooks/vcf_report.Rmd" >&2; exit 1; }
 [[ -d "${VT_ROOT}/data/db/${DB_ID}" ]] || { echo "ERROR: missing DB dir: ${VT_ROOT}/data/db/${DB_ID}" >&2; exit 1; }
 
-pushd "$VT_ROOT" >/dev/null
 
-# Copy inputs locally
-cp -f "$VCF_SRC" .
-cp -f "$VCF_CSI" .
-cp -f "$BAM_SRC" .
-cp -f "$BAM_BAI" .
-
-VCF_LOCAL="${VT_ROOT}/$(basename "$VCF_SRC")"
-BAM_LOCAL="${VT_ROOT}/$(basename "$BAM_SRC")"
 
 # Render BAM report
+cp -f "${VT_ROOT}/notebooks/bam_report.Rmd" "${REPORT_DIR}/bam_report.Rmd"
+
 Rscript -e "rmarkdown::render(
-  'notebooks/bam_report.Rmd',
-  params=list(input_bam_file='${BAM_LOCAL}'),
-  knit_root_dir='${VT_ROOT}',
+  '${REPORT_DIR}/bam_report.Rmd',
+  params=list(input_bam_file='${BAM_SRC}'),
+  knit_root_dir='${REPORT_DIR}',
   output_dir='${REPORT_DIR}',
   output_file='${prefix}_bam'
 )"
 
 # Render VCF report (+ docx path via params)
+cp -f "${VT_ROOT}/notebooks/vcf_report.Rmd" "${REPORT_DIR}/vcf_report.Rmd"
 Rscript -e "rmarkdown::render(
-  'notebooks/vcf_report.Rmd',
+  '${REPORT_DIR}/vcf_report.Rmd',
   params=list(
-    input_vcf_file='${VCF_LOCAL}',
+    input_vcf_file='${VCF_SRC}',
     input_db_dir='${VT_ROOT}/data/db/${DB_ID}',
     input_fasta='${VT_ROOT}/db/${virus}.fasta',
     template_docx='${TEMPLATE_DOCX}',
     output_docx_report='${prefix}.vcf.gz.${DB_ID}.docx'
   ),
-  knit_root_dir='${VT_ROOT}',
+  knit_root_dir='${REPORT_DIR}',
   output_dir='${REPORT_DIR}',
   output_file='${prefix}'
 )"
-
+# Cleanup local copies
+rm -f '${REPORT_DIR}/bam_report.Rmd'
+rm -f '${REPORT_DIR}/vcf_report.Rmd'
 
 if [[ -f "${VT_ROOT}/${prefix}.vcf.gz.${DB_ID}.docx" ]]; then
   mv -f "${VT_ROOT}/${prefix}.vcf.gz.${DB_ID}.docx" "${REPORT_DIR}/"
 fi
-
-# Cleanup local copies
-rm -f "$(basename "$VCF_SRC")" "$(basename "$VCF_CSI")" "$(basename "$BAM_SRC")" "$(basename "$BAM_BAI")"
-
-popd >/dev/null
 
 info "Virotyper reports written to ${REPORT_DIR}/"
