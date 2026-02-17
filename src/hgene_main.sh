@@ -84,8 +84,35 @@ bash "${SCRIPT_DIR}/hgene_map.sh" "${prefix}.trimmed.fastq" "$virus" "$CPU" "$pr
 step "Variant calling (hgene_variant_call.sh)"
 bash "${SCRIPT_DIR}/hgene_variant_call.sh" "$prefix" "$virus" "$CPU"
 
+ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." >/dev/null 2>&1 && pwd)"
+
+
+# --- Auto user template based on virus ---
+HG_TEMPLATE_DOCX=""
+
+case "$virus" in
+  HHV1)
+    CANDIDATE="${ROOT_DIR}/template/hsv1/template.docx"
+    ;;
+  HHV2)
+    CANDIDATE="${ROOT_DIR}/template/hsv2/template.docx"
+    ;;
+  *)
+    CANDIDATE=""
+    ;;
+esac
+
+if [[ -n "$CANDIDATE" && -s "$CANDIDATE" ]]; then
+  HG_TEMPLATE_DOCX="$CANDIDATE"
+  info "User template detected: $HG_TEMPLATE_DOCX"
+else
+  if [[ -n "$CANDIDATE" ]]; then
+    warn "User template not found: $CANDIDATE"
+    warn "Falling back to default DB template"
+  fi
+fi
 
 if [[ "${virus}" == "HHV1" || "${virus}" == "HHV2" ]]; then
   step "step Virotyper report (hgene_virotype_report.sh)"
-  bash "${SCRIPT_DIR}/hgene_virotype_report.sh" "${virus}" "${prefix}"
+  bash "${SCRIPT_DIR}/hgene_virotype_report.sh" "${virus}" "${prefix}" "${HG_TEMPLATE_DOCX:-}"
 fi

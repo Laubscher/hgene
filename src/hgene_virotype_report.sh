@@ -17,12 +17,12 @@ info() { log "INFO" "$*"; }
 step() { log "STEP" "$*"; }
 error() { log "ERROR" "$*"; }
 
-virus="${1:-}"; prefix="${2:-}"
-[[ -n "$virus" && -n "$prefix" ]] || usage
-
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
 
 VT_ROOT="$(cd -- "${SCRIPT_DIR}/../" && pwd)"
+
+virus="${1:-}"; prefix="${2:-}"
+[[ -n "$virus" && -n "$prefix" ]] || usage
 
 # Map virus key -> virotyper DB_ID
 case "$virus" in
@@ -30,6 +30,28 @@ case "$virus" in
   HHV2) DB_ID="hsv2" ;;
   *) echo "ERROR: virotyper report enabled only for HHV1/HHV2 (got: $virus)" >&2; exit 1 ;;
 esac
+
+USER_TEMPLATE="${3:-}"
+
+# template par défaut
+DB_TEMPLATE="${VT_ROOT}/data/db/${DB_ID}/template.docx"
+
+
+if [[ -n "${USER_TEMPLATE:-}" ]]; then
+  if [[ -s "$USER_TEMPLATE" ]]; then
+    TEMPLATE_DOCX="$USER_TEMPLATE"
+    info "Using user template: $TEMPLATE_DOCX"
+  else
+    warn "User template not found: $USER_TEMPLATE"
+    warn "Falling back to default template: $DB_TEMPLATE"
+    TEMPLATE_DOCX=${DB_TEMPLATE}
+  fi
+else
+  info "Using default template: $DB_TEMPLATE"
+  TEMPLATE_DOCX=${DB_TEMPLATE}
+fi
+
+
 
 OUTDIR="${prefix}_output"
 REPORT_DIR="${OUTDIR}/REPORT_${prefix}"
@@ -77,6 +99,7 @@ Rscript -e "rmarkdown::render(
     input_vcf_file='${VCF_LOCAL}',
     input_db_dir='${VT_ROOT}/data/db/${DB_ID}',
     input_fasta='${VT_ROOT}/db/${virus}.fasta',
+    template_docx='${TEMPLATE_DOCX}',
     output_docx_report='${prefix}.vcf.gz.${DB_ID}.docx'
   ),
   knit_root_dir='${VT_ROOT}',

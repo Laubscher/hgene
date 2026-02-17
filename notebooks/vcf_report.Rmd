@@ -8,6 +8,7 @@ params:
   input_db_dir: "data/db/hsv1"
   input_vcf_file: ""
   input_fasta: ""
+  template_docx: ""
   output_docx_report: ""
 ---
 
@@ -247,7 +248,10 @@ print(concluding_sentence)
 ```{r include=FALSE}
 # Generation du rapport clinique à partir du template WORD
 library(officer)
-docx_template <- file.path(params$input_db_dir,"template.docx")
+docx_template <- params$template_docx
+if (is.null(docx_template) || docx_template == "" || !file.exists(docx_template)) {
+  docx_template <- file.path(params$input_db_dir, "template.docx")
+}
 doc <- read_docx(docx_template) |>
   body_replace_all_text("SEQDATE",format(filemeta$run_date,"%Y-%m-%d"),fixed = TRUE) |>
   body_replace_all_text("IDTUBE",filemeta$tube_id,fixed = TRUE) |>
