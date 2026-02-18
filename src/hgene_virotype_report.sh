@@ -73,7 +73,6 @@ BAM_BAI="${BAM_SRC}.bai"
 [[ -d "${VT_ROOT}/data/db/${DB_ID}" ]] || { echo "ERROR: missing DB dir: ${VT_ROOT}/data/db/${DB_ID}" >&2; exit 1; }
 
 
-
 # Render BAM report
 cp -f "${VT_ROOT}/notebooks/bam_report.Rmd" "${REPORT_DIR}/bam_report.Rmd"
 
@@ -100,9 +99,10 @@ Rscript -e "rmarkdown::render(
   output_dir='${REPORT_DIR}',
   output_file='${prefix}'
 )"
+
 # Cleanup local copies
-rm -f '${REPORT_DIR}/bam_report.Rmd'
-rm -f '${REPORT_DIR}/vcf_report.Rmd'
+rm -f "${REPORT_DIR}/bam_report.Rmd"
+rm -f "${REPORT_DIR}/vcf_report.Rmd"
 
 if [[ -f "${VT_ROOT}/${prefix}.vcf.gz.${DB_ID}.docx" ]]; then
   mv -f "${VT_ROOT}/${prefix}.vcf.gz.${DB_ID}.docx" "${REPORT_DIR}/"

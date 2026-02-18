@@ -52,7 +52,7 @@ need_cmd python3
 need_cmd awk
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
-DB_DIR="${SCRIPT_DIR}/../db"
+DB_DIR="$(cd "${SCRIPT_DIR}/../db" && pwd)"
 FASTA="${DB_DIR}/${virus}.fasta"
 GFF="${DB_DIR}/${virus}.gff"
 
@@ -61,8 +61,7 @@ GFF="${DB_DIR}/${virus}.gff"
 # Recommended keys:
 #   ACCESSION=KX035107.1
 #   FASTA_SHA256=<expected sha>
-# Optional:
-#   GFF_SHA256=<expected sha>
+
 
 REF_INFO="${HG_REF_INFO:-${DB_DIR}/${virus}.info}"
 
@@ -220,10 +219,18 @@ python3 "${SCRIPT_DIR}/hgene_codon_haplotype_merge.py" \
 end_timer
 
 # --- Add provenance lines to final VCF header (plain VCF before bgzip) ---
+
+if [[ -n "${SINGULARITY_CONTAINER:-}" ]]; then
+  if command -v sha256sum >/dev/null 2>&1 && [[ -r "${SINGULARITY_CONTAINER}" ]]; then
+    SINGULARITY_CONTAINER_SHA256_ACTUAL="$(sha256sum "${SINGULARITY_CONTAINER}" | awk '{print $1}')"
+  fi
+fi
+
 if command -v bcftools >/dev/null 2>&1; then
   tmp_vcf="${prefix}.vcf.hgene.tmp"
   bcftools annotate -h <(cat <<EOF
 ##hgene_version=${HG_VERSION:-unknown}
+##hgene_container_sha256=${SINGULARITY_CONTAINER_SHA256_ACTUAL:-unknown}
 ##hgene_ref_info=${REF_INFO}
 ##hgene_ref_info_status=${REF_INFO_STATUS}
 ##hgene_ref_accession=${REF_ACCESSION}

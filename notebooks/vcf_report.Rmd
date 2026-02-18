@@ -47,6 +47,7 @@ get_vcf_meta <- function(vcf_path, key) {
 }
 
 hgene_version      <- get_vcf_meta(params$input_vcf_file, "hgene_version")
+container_sha256    <- get_vcf_meta(params$input_vcf_file, "hgene_container_sha256")
 ref_accession      <- get_vcf_meta(params$input_vcf_file, "hgene_ref_accession")
 ref_info_status    <- get_vcf_meta(params$input_vcf_file, "hgene_ref_info_status")
 
@@ -98,6 +99,7 @@ query_vcf <- function(vcf_file) {
 | Version du logiciel:              | ``r hgene_version``                     |
 | Nom du fichier VCF analysé:       | ``r params$input_vcf_file``             |
 | Nom du rapport produit:           | ``r params$output_docx_report``         |
+| Empreinte cryptographique (SHA-256) du conteneur : | ``r container_sha256`` |
 
 ```{r,message=FALSE}
 # Load data
@@ -257,7 +259,8 @@ doc <- read_docx(docx_template) |>
   body_replace_all_text("IDTUBE",filemeta$tube_id,fixed = TRUE) |>
   body_replace_all_text("IDPATIENT",filemeta$initials_patient,fixed = TRUE) |>
   body_replace_all_text("_ACCESSIONNUMBER_",ref_accession, fixed = TRUE) |>
-  body_replace_all_text("_VERSIONLOGICIEL_",hgene_version, fixed = TRUE)
+  body_replace_all_text("_VERSIONLOGICIEL_",hgene_version, fixed = TRUE) |>
+  body_replace_all_text("_EMPREINTE_",container_sha256, fixed = TRUE)
 
 doc <- body_replace_all_text(doc,"CONCLUSIONSDELANALYSE",concluding_sentence, fixed = TRUE)
 
