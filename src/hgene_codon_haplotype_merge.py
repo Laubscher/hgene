@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Author: Florian Laubscher
+# Part of: hgene pipeline
+
 """
 hgene_codon_haplotype_merge.py
 

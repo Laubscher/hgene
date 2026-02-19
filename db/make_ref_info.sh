@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Author: Florian Laubscher
+
 set -euo pipefail
 
 usage() {

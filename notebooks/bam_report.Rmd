@@ -1,3 +1,5 @@
+#Author: Julien Prados
+
 ---
 title: "Rapport d'analyse d'un fichier BAM"
 output:

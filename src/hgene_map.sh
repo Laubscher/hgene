@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Author: Florian Laubscher
+# Part of: hgene pipeline
+
 set -euo pipefail
 IFS=$'\n\t'
 

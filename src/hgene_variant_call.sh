@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Author: Florian Laubscher
+# Part of: hgene pipeline
 set -euo pipefail
 IFS=$'\n\t'
 
@@ -115,7 +117,7 @@ export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/usr/local/lib"
 TMPDIR="$(mktemp -d "${prefix}.tmp.XXXXXX")"
 trap 'rm -rf "$TMPDIR" 2>/dev/null || true' EXIT
 
-# Optional: remove previous adapter-trim fastq if present
+# remove previous adapter-trim fastq if present
 rmf "${prefix}_tr.fastq"
 
 # -------------------- BAM preprocessing --------------------

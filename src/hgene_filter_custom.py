@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Author: Florian Laubscher
+# Part of: hgene pipeline
 import sys
 
 THR_DEFAULT = 0.20       # deletion si HRUN < 4 (ou absent)

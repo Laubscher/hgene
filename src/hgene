@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Author: Florian Laubscher
+# Part of: hgene pipeline
+# SPDX-License-Identifier: MIT
+
 set -euo pipefail
 IFS=$'\n\t'
 
