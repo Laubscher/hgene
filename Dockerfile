@@ -1,7 +1,9 @@
 FROM bioconductor/bioconductor_docker:3.19 AS base
 
-RUN R -q -e "install.packages(c('tidyverse','rmarkdown','knitr','Biostrings','GenomicAlignments','Rsamtools','kableExtra','officer'), repos='https://cloud.r-project.org')"
-RUN R -q -e "BiocManager::install(c('Biostrings','Rsamtools','GenomicRanges','GenomeInfoDb','GenomicAlignments','kableExtra','officer'), ask=FALSE, update=FALSE)"
+RUN R -q -e "install.packages(c('tidyverse','rmarkdown','knitr','kableExtra','officer'), repos='https://cloud.r-project.org')"
+
+RUN R -q -e "BiocManager::install(c('Biostrings','Rsamtools','GenomicRanges','GenomeInfoDb','GenomicAlignments'), ask=FALSE, update=FALSE)"
+
 
 # Install packages dependencies
 RUN apt-get update && apt-get install -y \
@@ -131,7 +133,7 @@ COPY --chmod=755 src/* /usr/local/bin/
 COPY --chmod=755 db/* /usr/local/db/
 COPY --chmod=755 notebooks/* /usr/local/notebooks/
 COPY data/db/ /usr/local/data/db/
-COPY LICENSE.txt /usr/local/share/licenses/hgene/LICENSE
+COPY LICENSE /usr/local/share/licenses/hgene/LICENSE
 
    
 ENV PATH="/usr/local/bin:${PATH}"
