@@ -13,7 +13,7 @@ IFS=$'\n\t'
 
 usage() {
   cat >&2 <<'USAGE'
-Usage: map2HHV.sh <input_fastq> <virus> <CPU> [prefix]
+Usage: hgene_map.sh <input_fastq> <virus> <CPU> [prefix]
 
 Expects:
   <prefix>.trimmed.fastq
@@ -55,4 +55,4 @@ need_cmd minimap2
 [[ -s "$REF" ]] || die "Reference FASTA not found: $REF"
 
 step "minimap2 -ax map-ont (threads=$CPU)"
-minimap2 -t "$CPU" -ax map-ont "$REF" "${input_fastq}" > "${prefix}.sam"
+minimap2 -t "$CPU" -ax map-ont -secondary=no -O 6,6 -E 2,2 "$REF" "${input_fastq}" > "${prefix}.sam"
