@@ -50,7 +50,7 @@ get_vcf_meta <- function(vcf_path, key) {
 }
 
 hgene_version      <- get_vcf_meta(params$input_vcf_file, "hgene_version")
-container_sha256    <- get_vcf_meta(params$input_vcf_file, "hgene_container_sha256")
+container_sha256   <- get_vcf_meta(params$input_vcf_file, "hgene_container_sha256")
 ref_accession      <- get_vcf_meta(params$input_vcf_file, "hgene_ref_accession")
 ref_info_status    <- get_vcf_meta(params$input_vcf_file, "hgene_ref_info_status")
 
@@ -161,7 +161,7 @@ Légende:
  - `amino_acid_change`: Position de la mutation sur la protéine.
  - `consequence`: Classification de la mutation (synonymous, missense, stop_gained, frameshift, inframe_shift).
  - `drug`: Nom de l'antiviral pour lequel la mutation confére une résitance.
- - `read_depth``: Profondeur de sequencage au niveau de la mutation.
+ - `read_depth`: Profondeur de sequencage au niveau de la mutation.
  - `allele_freq`: Proportion des reads portant la mutation.
 
 
