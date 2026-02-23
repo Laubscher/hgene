@@ -503,9 +503,6 @@ def main(vcf_path, fasta_path, gff_path, bam_path,
     merged = {}  # idx -> merged_text (may contain multiple lines)
 
     for key, idxs in groups.items():
-        if len(idxs) not in (2, 3):
-            continue
-
         chrom, gene, strand, codon_anchor, codon_ref_cds = key
 
                 # Build multi-allelic-aware sites (unique positions) with CDS frame
@@ -519,6 +516,9 @@ def main(vcf_path, fasta_path, gff_path, bam_path,
             if pos not in by_pos:
                 by_pos[pos] = {"pos": pos, "frame": frame, "alleles": set([refb])}
             by_pos[pos]["alleles"].add(altb)
+
+        if len(by_pos) not in (2, 3):  #test if 2 or 3 pos not 2 and 3 entries
+            continue
 
         sites = sorted(by_pos.values(), key=lambda x: x["pos"])
 
