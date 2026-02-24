@@ -256,6 +256,7 @@ fi
 step "bcftools index final -> ${prefix}.vcf.gz"
 start_timer
 bcftools sort "${prefix}.vcf"  -Oz -o "${prefix}.vcf.gz" #sort and gzip
+rmf "${prefix}.vcf"
 index_vcfgz "${prefix}.vcf.gz"
 end_timer
 
