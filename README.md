@@ -1,8 +1,8 @@
 # hgene
 
-**Version:** 1.0.1-rc3
+**Version:** CMV-0.0.1-pre.1
 
-hgene performs small-variant analysis (SNPs, MNVs and indels) in the HSV resistance genes UL23 and UL30, applies homopolymer-aware filtering, reconstructs codon-level amino-acid consequences using read-level linkage, and reports variant co-occurrence evidence.
+hgene performs small-variant analysis (SNPs, MNVs and indels) in the CMV resistance genes, applies homopolymer-aware filtering, reconstructs codon-level amino-acid consequences using read-level linkage, and reports variant co-occurrence evidence.
 
 ---
 
@@ -34,7 +34,7 @@ _- Reads containing internal adapters are fully discarded_
 
 ### BAM filtering
 - Minimum mapping quality: **MAPQ ≥ 40**
-- Minimum aligned reference span: **≥ 1000 bp**
+- Minimum aligned reference span: **≥ 100 bp**
 
 ### Variant calling (LoFreq)
 - Default LoFreq filters disabled
@@ -119,7 +119,7 @@ _In french_
 
 ## Custom report template
 
-Users can provide a custom `template.docx` by placing it in `$HOME/template/hsv-1/` or `$HOME/template/hsv-2/`. If detected, it will automatically be used for report generation. If no template is found, the default built-in template is used.
+Users can provide a custom `template.docx` by placing it in `$HOME/template/cmv/`. If detected, it will automatically be used for report generation. If no template is found, the default built-in template is used.
 
 ---
 

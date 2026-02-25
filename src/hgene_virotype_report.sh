@@ -31,7 +31,8 @@ virus="${1:-}"; prefix="${2:-}"
 case "$virus" in
   HHV1) DB_ID="hsv1" ;;
   HHV2) DB_ID="hsv2" ;;
-  *) echo "ERROR: virotyper report enabled only for HHV1/HHV2 (got: $virus)" >&2; exit 1 ;;
+  HHV5) DB_ID="cmv" ;;
+  *) echo "ERROR: virotyper report enabled only for HHV1/HHV2/HHV5 (got: $virus)" >&2; exit 1 ;;
 esac
 
 USER_TEMPLATE="${3:-}"

@@ -96,6 +96,7 @@ TEMPLATE_ROOT="${HG_TEMPLATE_ROOT:-$HOME/template}"
 case "$virus" in
   HHV1) CANDIDATE="${TEMPLATE_ROOT}/hsv1/template.docx" ;;
   HHV2) CANDIDATE="${TEMPLATE_ROOT}/hsv2/template.docx" ;;
+  HHV5) CANDIDATE="${TEMPLATE_ROOT}/cmv/template.docx" ;;
   *) CANDIDATE="" ;;
 esac
 
@@ -109,7 +110,7 @@ else
   fi
 fi
 
-if [[ "${virus}" == "HHV1" || "${virus}" == "HHV2" ]]; then
+if [[ "${virus}" == "HHV1" || "${virus}" == "HHV2" || "${virus}" == "HHV5" ]]; then
   step "step Virotyper report (hgene_virotype_report.sh)"
   bash "${SCRIPT_DIR}/hgene_virotype_report.sh" "${virus}" "${prefix}" "${HG_TEMPLATE_DOCX:-}"
 fi
