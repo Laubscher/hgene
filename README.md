@@ -8,6 +8,7 @@ hgene performs small-variant analysis (SNPs, MNVs and indels) in the HSV resista
 
 ![hgene pipeline workflow](docs/HSV_pipeline_flowchart.svg)
 
+
 ## Usage
 
 `hgene -v <virus> [-c <cpu>] <prefix|prefix.fastq>`
