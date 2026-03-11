@@ -63,6 +63,56 @@ parse_BCSQ <- function(BCSQ) {
     select(!str)
 }
 
+# UL89 renumbering pos for 2nd exon
+
+ul89_offset_nt <- function(chrom) {
+  case_when(
+    chrom == "UL89_1-HHV5" ~ 888L,
+    TRUE ~ 0L
+  )
+}
+
+report_gene <- function(chrom, gene) {
+  case_when(
+    chrom %in% c("UL89_1-HHV5", "UL89_3-HHV5") ~ "UL89-HHV5",
+    TRUE ~ gene
+  )
+}
+
+report_dna_change <- function(chrom, pos, ref, alt, dna_change_raw = NA_character_) {
+  pos2 <- pos + ul89_offset_nt(chrom)
+  case_when(
+    chrom %in% c("UL89_1-HHV5", "UL89_3-HHV5") ~ str_glue("{pos2}{ref}>{alt}"),
+    !is.na(dna_change_raw) & dna_change_raw != "" ~ dna_change_raw,
+    TRUE ~ str_glue("{pos}{ref}>{alt}")
+  )
+}
+
+report_aa_change <- function(chrom, aa_change_raw) {
+  if (is.na(aa_change_raw) || aa_change_raw == "") return(aa_change_raw)
+  if (!(chrom %in% c("UL89_1-HHV5", "UL89_3-HHV5"))) return(aa_change_raw)
+
+  m <- str_match(aa_change_raw, "^(\\d+)([A-Za-z*]+)>(\\d+)([A-Za-z*]+)$")
+  if (all(is.na(m))) return(aa_change_raw)
+
+  pos_ref <- as.integer(m[,2])
+  aa_ref  <- m[,3]
+  pos_alt <- as.integer(m[,4])
+  aa_alt  <- m[,5]
+
+  aa_offset <- ul89_offset_nt(chrom) / 3L
+
+  paste0(
+    pos_ref + aa_offset,
+    aa_ref,
+    ">",
+    pos_alt + aa_offset,
+    aa_alt
+  )
+}
+
+
+
 # Helper function to highlight the cell of a table in the HTML report
 highlight_cell_spec <- function(v,msk,bg="red") {
   kableExtra::cell_spec(v,
@@ -111,30 +161,57 @@ fa <- FaFile(file.path(params$input_fasta))
 mut <- query_vcf(params$input_vcf_file)
 
 # Parse BCSQ
-mut <- bind_cols(mut,parse_BCSQ(mut$BCSQ)) |>
+mut <- bind_cols(mut, parse_BCSQ(mut$BCSQ)) |>
+  mutate(
+    gene_report = report_gene(CHROM, gene),
+    dna_change_report = report_dna_change(CHROM, POS, REF, ALT, dna_change),
+    amino_acid_change_report = map2_chr(CHROM, amino_acid_change, report_aa_change)
+  ) |>
   arrange(CHROM)
 
 # Match BCSQ with mutations in resistance DB
 mut <- mut |>
-  left_join(dplyr::select(db,c(CHROM,aa_chg_bcsq,drug,mutation_type)),by=c("CHROM","amino_acid_change"="aa_chg_bcsq")) |>
-  left_join(dplyr::select(db,c(CHROM,dna_chg_bcsq,drug,mutation_type)),by=c("CHROM","dna_change"="dna_chg_bcsq")) |>
-  unite("drug",drug.x,drug.y,sep = ",",na.rm = TRUE) |>
-  unite("mutation_type",mutation_type.x,mutation_type.y,sep = ",",na.rm = TRUE) |>
-  mutate(drug = case_when(
-    is.na(drug) ~ "-",
-    drug == "" ~ "-",
-    TRUE ~ drug))
+  left_join(
+    dplyr::select(db, CHROM, aa_chg_bcsq, drug_aa = drug, mutation_type_aa = mutation_type),
+    by = c("CHROM", "amino_acid_change" = "aa_chg_bcsq")
+  ) |>
+  left_join(
+    dplyr::select(db, CHROM, dna_chg_bcsq, drug_dna = drug, mutation_type_dna = mutation_type),
+    by = c("CHROM", "dna_change" = "dna_chg_bcsq")
+  ) |>
+  mutate(
+    drug = coalesce(drug_aa, drug_dna),
+    mutation_type = coalesce(mutation_type_aa, mutation_type_dna)
+  ) |>
+  dplyr::select(-drug_aa, -mutation_type_aa, -drug_dna, -mutation_type_dna)
+
+if ("gene" %in% colnames(db) && "aa_change" %in% colnames(db)) {
+  mut <- mut |>
+    left_join(
+      db |> dplyr::select(gene, aa_change, drug_gene = drug, mutation_type_gene = mutation_type),
+      by = c("gene_report" = "gene", "amino_acid_change_report" = "aa_change")
+    ) |>
+    mutate(
+      drug = coalesce(drug, drug_gene),
+      mutation_type = coalesce(mutation_type, mutation_type_gene)
+    ) |>
+    dplyr::select(-drug_gene, -mutation_type_gene)
+}
+
+mut <- mut |>
+  mutate(
+    drug = case_when(
+      is.na(drug) ~ "-",
+      drug == "" ~ "-",
+      TRUE ~ drug
+    ),
+    mutation_type = case_when(
+      is.na(mutation_type) ~ "",
+      TRUE ~ mutation_type
+    )
+  )
+
 ```
-
-
-
-
-
-
-
-
-
-
 # Mutations détéctées
 
 Cette section affiche la liste des mutations detéctées (contenu du fichier VCF),
@@ -146,7 +223,17 @@ MUT <- mut |>
   arrange(CHROM,POS)
 
 MUT |>
-  dplyr::select(CHROM,dna_change,gene,amino_acid_change,consequence,drug,mutation_type,read_depth=DP,allele_freq=AF) |>
+  dplyr::select(
+    CHROM,
+    dna_change = dna_change_report,
+    gene = gene_report,
+    amino_acid_change = amino_acid_change_report,
+    consequence,
+    drug,
+    mutation_type,
+    read_depth = DP,
+    allele_freq = AF
+  ) |>
   mutate(across(c(dna_change,amino_acid_change),~str_trunc(.,width=25))) |>
   mutate(allele_freq = highlight_cell_spec(sprintf("%.1f%%",100*allele_freq),allele_freq<0.5,bg="#2E8B57")) |>
   mutate(consequence = highlight_cell_spec(consequence,consequence!="synonymous")) |>
@@ -213,14 +300,19 @@ MUT <- mut |>
   filter(str_starts(BCSQ,"@",negate = TRUE)) |>
   filter(consequence != "synonymous") |>
   mutate(mutation = case_when(
-    is.na(amino_acid_change) ~ str_trunc(str_to_lower(dna_change),20),
-    TRUE ~ amino_acid_change
+    is.na(amino_acid_change_report) ~ str_trunc(str_to_lower(dna_change_report),20),
+    TRUE ~ amino_acid_change_report
   )) |>
   mutate(mutation = sprintf("%s (%.1f%%)",mutation,100*AF)) |>
   mutate(mutation_type = replace_na(mutation_type,"")) |>
   mutate(mutation_type = str_replace(mutation_type,"^[\\s]*$","Non-caractérisée")) |>
-  arrange(gene,POS) |>
-  dplyr::select(gene,Antiviral=drug,"Mutation (% échantillon portant la mutation)"=mutation,"Type de mutation"=mutation_type) |>
+  arrange(gene_report, POS) |>
+  dplyr::select(
+    gene = gene_report,
+    Antiviral = drug,
+    "Mutation (% échantillon portant la mutation)" = mutation,
+    "Type de mutation" = mutation_type
+  ) |>
   distinct()
 
 kable_style(MUT,caption="Liste des mutations montrées dans le rapport clinique")
@@ -267,7 +359,7 @@ doc <- read_docx(docx_template) |>
 
 doc <- body_replace_all_text(doc,"CONCLUSIONSDELANALYSE",concluding_sentence, fixed = TRUE)
 
-MUT <- split(MUT,factor(MUT$gene,seqlevels(fa)))
+MUT <- split(MUT, MUT$gene)
 for(i in names(MUT)) {
   marker <- paste0("RES-",i)
   doc <- doc |>
