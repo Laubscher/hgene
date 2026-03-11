@@ -1,6 +1,6 @@
 # hgene
 
-**Version:** CMV-0.0.1-pre.1
+**Version:** CMV-0.0.1-pre.2
 
 hgene performs small-variant analysis (SNPs, MNVs and indels) in the CMV resistance genes, applies homopolymer-aware filtering, reconstructs codon-level amino-acid consequences using read-level linkage, and reports variant co-occurrence evidence.
 
@@ -12,7 +12,7 @@ hgene performs small-variant analysis (SNPs, MNVs and indels) in the CMV resista
 
 **Arguments**
 
-- `-v <virus>` — Virus reference key (e.g. HHV1, HHV2)
+- `-v <virus>` — Virus reference key (e.g. HHV5)
 - `-c <cpu>` — Number of threads (default: nproc)
 - `<input>` — Prefix or an uncompressed `.fastq` file
 
@@ -49,7 +49,7 @@ _- Reads containing internal adapters are fully discarded_
   - **AF ≥ 0.40** when `HRUN ≥ 4`
   - **AF ≥ 0.20** when `HRUN < 4` or missing
 
-### Codon reconstruction and linkage
+### Codon phasing
 - Codon-level variant reconstruction uses read-level evidence
 - Minimum haplotype allele frequency: **0.10**
 - Minimum informative reads: **10**
