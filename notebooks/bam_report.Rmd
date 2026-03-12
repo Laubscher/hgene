@@ -1,5 +1,6 @@
 ---
 # Author: Julien Prados
+# Modified by: Florian Laubscher
 
 title: "Rapport d'analyse d'un fichier BAM"
 output:
@@ -8,6 +9,7 @@ output:
     highlight: espresso
 params:
   input_bam_file: ""
+  output_coverage_tsv: ""
 ---
 
 
@@ -32,6 +34,13 @@ kable_style <- function(...,escape=FALSE,row.names = FALSE,align = "c") {
    kableExtra::kable_classic("striped",full_width=FALSE)
   #knitr::kable(...,escape = escape,align = align,row.names = row.names)
 }
+
+report_gene <- function(exon) {
+  case_when(
+    exon %in% c("UL89_1-HHV5", "UL89_3-HHV5") ~ "UL89-HHV5",
+    TRUE ~ as.character(exon)
+  )
+}
 ```
 
 
@@ -52,11 +61,61 @@ en avale.
 bam <- readGAlignments(params$input_bam_file,use.names = TRUE,param = ScanBamParam(what=c("mapq","qual")))
 cov <- coverage(bam)
 aln <- tibble(
-  contig = as.factor(seqnames(bam)),
+  exon = as.factor(seqnames(bam)),
   reads_sizes = cigarWidthAlongQuerySpace(cigar(bam)),
   reads_avg_qual = mean(as(mcols(bam)$qual,"IntegerList")),
   mapq = mcols(bam)$mapq
 )
+
+coverage_by_exon <- as(cov,"GRanges") |>
+  as.data.frame() |>
+  as_tibble() |>
+  transmute(
+    exon = as.character(seqnames),
+    start = start,
+    end = end,
+    depth = score
+  )
+
+coverage_summary_exon <- coverage_by_exon |>
+  rowwise() |>
+  mutate(pos = list(seq.int(start, end))) |>
+  ungroup() |>
+  select(exon, pos, depth) |>
+  unnest(pos) |>
+  group_by(exon) |>
+  summarise(
+    length_bp = n(),
+    avg_cov = mean(depth),
+    min_cov = min(depth),
+    num_0x_bp = sum(depth <= 0),
+    num_20x_bp = sum(depth < 20),
+    num_100x_bp = sum(depth < 100),
+    .groups = "drop"
+  ) |>
+  mutate(
+    low_coverage_20x = min_cov < 20,
+    low_coverage_100x = min_cov < 100
+  )
+
+coverage_summary_export <- coverage_summary_exon |>
+  mutate(gene = report_gene(exon)) |>
+  group_by(gene) |>
+  summarise(
+    length_bp = sum(length_bp),
+    min_cov = min(min_cov),
+    avg_cov = sum(avg_cov * length_bp, na.rm = TRUE) / sum(length_bp, na.rm = TRUE),
+    num_0x_bp = sum(num_0x_bp),
+    num_20x_bp = sum(num_20x_bp),
+    num_100x_bp = sum(num_100x_bp),
+    low_coverage_20x = any(low_coverage_20x),
+    low_coverage_100x = any(low_coverage_100x),
+    .groups = "drop"
+  )
+
+if (!is.null(params$output_coverage_tsv) && params$output_coverage_tsv != "") {
+  readr::write_tsv(coverage_summary_export, params$output_coverage_tsv)
+}
 
 data.frame(
     num_read = length(bam),
@@ -85,9 +144,10 @@ data.frame(
   avg_cov = mean(cov),
   min_cov = min(cov),
   num_0x_bp = sum(cov<=0),
-  num_20x_bp = sum(cov<=20)
+  num_20x_bp = sum(cov<20),
+  num_100x_bp = sum(cov<100)
 ) |> 
-  mutate(across(c(num_0x_bp,num_20x_bp),~highlight_cell_spec(.x,.x>0))) |>
+  mutate(across(c(num_0x_bp,num_20x_bp,num_100x_bp),~highlight_cell_spec(.x,.x>0))) |>
   kable_style(caption = "Couverture des références",row.names = TRUE)
 ```
 Légende:
@@ -96,18 +156,29 @@ Légende:
  - `min_cov`: Couverture minimum observée sur toute la référence
  - `num_0x_bp`: Le nombre de base de la référence qui ne sont absolument pas couverte par des reads.
  - `num_20x_bp`: Le nombre de base de la référence qui ne sont couverte avec moins de 20x de couverture.
+ - `num_100x_bp`: Le nombre de base de la référence qui présentent une couverture strictement inférieure à 100x.
 
 Note: 
 
 - En présence d'une faible couverture, il est possible que des mutations soient manquées dans ces régions.
 
 
+# Résumé par exon
+```{r results="asis"}
+coverage_summary_exon |>
+  mutate(
+    low_coverage_20x = ifelse(low_coverage_20x, "TRUE", "FALSE"),
+    low_coverage_100x = ifelse(low_coverage_100x, "TRUE", "FALSE")
+  ) |>
+  kable_style(caption = "Résumé de couverture par exon")
+```
+
 
 # Résumé Graphique {.tabset}
 
 ## Reads
 ```{r}
-ggplot(aln,aes(x=reads_sizes,y=reads_avg_qual,color=contig)) + 
+ggplot(aln,aes(x=reads_sizes,y=reads_avg_qual,color=exon)) + 
   geom_point(size=1) + 
   xlab("Read size (bp)") + ylab("Average read quality") +
   ggtitle("Read quality / Read size") + theme(legend.position="bottom") + 
@@ -128,6 +199,3 @@ as(cov,"GRanges") |>
     ggtitle("Couverture de la reference") + 
     theme_bw()
 ```
-
-
-

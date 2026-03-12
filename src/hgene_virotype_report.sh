@@ -82,7 +82,7 @@ cp -f "${VT_ROOT}/notebooks/bam_report.Rmd" "${REPORT_DIR}/bam_report.Rmd"
 
 Rscript -e "rmarkdown::render(
   '${REPORT_DIR}/bam_report.Rmd',
-  params=list(input_bam_file='${BAM_SRC}'),
+  params=list(input_bam_file='${BAM_SRC}',output_coverage_tsv='${REPORT_DIR}/coverage_summary.tsv'),
   knit_root_dir='${REPORT_DIR}',
   output_dir='${REPORT_DIR}',
   output_file='${prefix}_bam'
@@ -97,7 +97,8 @@ Rscript -e "rmarkdown::render(
     input_db_dir='${VT_ROOT}/data/db/${DB_ID}',
     input_fasta='${VT_ROOT}/db/${virus}.fasta',
     template_docx='${TEMPLATE_DOCX}',
-    output_docx_report='${prefix}.vcf.gz.${DB_ID}.docx'
+    output_docx_report='${prefix}.vcf.gz.${DB_ID}.docx',
+    input_coverage_tsv='${REPORT_DIR}/coverage_summary.tsv'
   ),
   knit_root_dir='${REPORT_DIR}',
   output_dir='${REPORT_DIR}',

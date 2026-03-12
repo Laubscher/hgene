@@ -13,6 +13,7 @@ params:
   input_fasta: ""
   template_docx: ""
   output_docx_report: ""
+  input_coverage_tsv: ""
 ---
 
 
@@ -159,6 +160,7 @@ query_vcf <- function(vcf_file) {
 db <- readxl::read_xlsx(file.path(params$input_db_dir,"resistances.chk.xlsx"))
 fa <- FaFile(file.path(params$input_fasta))
 mut <- query_vcf(params$input_vcf_file)
+coverage <- readr::read_tsv(params$input_coverage_tsv, show_col_types = FALSE)
 
 # Parse BCSQ
 mut <- bind_cols(mut, parse_BCSQ(mut$BCSQ)) |>
@@ -359,14 +361,63 @@ doc <- read_docx(docx_template) |>
 
 doc <- body_replace_all_text(doc,"CONCLUSIONSDELANALYSE",concluding_sentence, fixed = TRUE)
 
-MUT <- split(MUT, MUT$gene)
+report_levels <- seqlevels(fa) |>
+  as.character() |>
+  (\(x) ifelse(x %in% c("UL89_1-HHV5", "UL89_3-HHV5"), "UL89-HHV5", x))() |>
+  unique()
+
+MUT <- split(MUT, factor(MUT$gene, levels = report_levels))
+
 for(i in names(MUT)) {
-  marker <- paste0("RES-",i)
+  marker <- paste0("RES-", i)
+
   doc <- doc |>
     cursor_reach(marker) |>
-    body_replace_all_text(marker,"",fixed = TRUE,only_at_cursor = TRUE) |>
-    body_add_table(select(MUT[[i]],!gene),style="StyleTableauRes")
+    body_replace_all_text(marker, "", fixed = TRUE, only_at_cursor = TRUE)
+
+  low100 <- FALSE
+  low20 <- FALSE
+  if (!is.null(coverage) && nrow(coverage) > 0 && i %in% coverage$gene) {
+    row <- coverage |> filter(gene == i)
+    if (nrow(row) > 0) {
+      low100 <- isTRUE(row$low_coverage_100x[[1]])
+      low20 <- isTRUE(row$low_coverage_20x[[1]])
+    }
+  }
+
+  if (low20) {
+    doc <- doc |>
+      body_add_fpar(
+        value = fpar(
+          ftext(
+            "La couverture du gène est partiellement ou totalement inférieure à 20x.",
+            prop = fp_text(italic = TRUE)
+          )
+        ),
+        style = "Normal"
+      )
+  } else if (low100) {
+    doc <- doc |>
+      body_add_fpar(
+        value = fpar(
+          ftext(
+            "La couverture du gène est partiellement ou totalement inférieure à 100x.",
+            prop = fp_text(italic = TRUE)
+          )
+        ),
+        style = "Normal"
+      )
+  }
+
+  if (nrow(MUT[[i]]) > 0) {
+    doc <- doc |>
+      body_add_table(select(MUT[[i]], !gene), style = "StyleTableauRes")
+  } else {
+    doc <- doc |>
+      body_add_par("Aucune mutation détectée.", style = "Normal")
+  }
 }
+
 if (!is.null(params$output_docx_report) && (params$output_docx_report!="")) {
   print(doc,target=params$output_docx_report)
 }
