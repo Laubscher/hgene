@@ -43,6 +43,7 @@ index_vcfgz() { bcftools index --csi "$1"; }
 prefix="$1"
 virus="$2"
 CPU="$3"
+prefix_base="$(basename "$prefix")"
 
 # -------------------- deps --------------------
 need_cmd samtools
@@ -123,40 +124,40 @@ rmf "${prefix}_tr.fastq"
 # -------------------- BAM preprocessing --------------------
 step "samtools sort/index (raw)"
 start_timer
-samtools sort "${prefix}.sam" -o "${TMPDIR}/${prefix}.sorted1.bam"
-samtools index "${TMPDIR}/${prefix}.sorted1.bam"
+samtools sort "${prefix}.sam" -o "${TMPDIR}/${prefix_base}.sorted1.bam"
+samtools index "${TMPDIR}/${prefix_base}.sorted1.bam"
 end_timer
 
 step "samtools view MAPQ>=40"
 start_timer
-samtools view -bq 40 "${TMPDIR}/${prefix}.sorted1.bam" > "${TMPDIR}/${prefix}.filtered2.bam"
+samtools view -bq 40 "${TMPDIR}/${prefix_base}.sorted1.bam" > "${TMPDIR}/${prefix_base}.filtered2.bam"
 end_timer
 
 step "samtools view length filter"
 start_timer
 
 if [[ "$virus" == "HHV5" ]]; then
-  samtools view -e 'rlen>99'  -O BAM -o "${TMPDIR}/${prefix}.filtered.bam" "${TMPDIR}/${prefix}.filtered2.bam"
+  samtools view -e 'rlen>99'  -O BAM -o "${TMPDIR}/${prefix_base}.filtered.bam" "${TMPDIR}/${prefix_base}.filtered2.bam"
 else
-  samtools view -e 'rlen>999' -O BAM -o "${TMPDIR}/${prefix}.filtered.bam" "${TMPDIR}/${prefix}.filtered2.bam"
+  samtools view -e 'rlen>999' -O BAM -o "${TMPDIR}/${prefix_base}.filtered.bam" "${TMPDIR}/${prefix_base}.filtered2.bam"
 fi
 end_timer
 
 step "samtools sort/index (filtered)"
 start_timer
-samtools sort "${TMPDIR}/${prefix}.filtered.bam" -o "${TMPDIR}/${prefix}.sorted.bam"
-samtools index "${TMPDIR}/${prefix}.sorted.bam"
+samtools sort "${TMPDIR}/${prefix_base}.filtered.bam" -o "${TMPDIR}/${prefix_base}.sorted.bam"
+samtools index "${TMPDIR}/${prefix_base}.sorted.bam"
 end_timer
 
 # remove intermediate BAMs produced inside TMPDIR
-rmf "${TMPDIR}/${prefix}.sorted1.bam" "${TMPDIR}/${prefix}.sorted1.bam.bai"
-rmf "${TMPDIR}/${prefix}.filtered2.bam" "${TMPDIR}/${prefix}.filtered.bam"
+rmf "${TMPDIR}/${prefix_base}.sorted1.bam" "${TMPDIR}/${prefix_base}.sorted1.bam.bai"
+rmf "${TMPDIR}/${prefix_base}.filtered2.bam" "${TMPDIR}/${prefix_base}.filtered.bam"
 
 # -------------------- LoFreq indelqual -> final BAM --------------------
 step "LoFreq indelqual -> ${prefix}.bam"
 start_timer
-lofreq indelqual -u 16 -f "$FASTA" "${TMPDIR}/${prefix}.sorted.bam" > "${prefix}.bam"
-rmf "${TMPDIR}/${prefix}.sorted.bam" "${TMPDIR}/${prefix}.sorted.bam.bai"
+lofreq indelqual -u 16 -f "$FASTA" "${TMPDIR}/${prefix_base}.sorted.bam" > "${prefix}.bam"
+rmf "${TMPDIR}/${prefix_base}.sorted.bam" "${TMPDIR}/${prefix_base}.sorted.bam.bai"
 samtools index "${prefix}.bam"
 end_timer
 

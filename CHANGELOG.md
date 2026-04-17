@@ -4,7 +4,7 @@ All notable changes to **hgene** are documented in this file.
 
 ---
 
-## [1.0.1-rc1] — Unreleased
+## [1.0.1]
 
 ### Added
 - Integration of virotyper for variant interpretation and reporting.
