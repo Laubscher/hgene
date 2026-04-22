@@ -1,6 +1,6 @@
 # hgene
 
-**Version:** 1.0.1
+**Version:** 1.0.1-rc4
 
 hgene performs small-variant analysis (SNPs, MNVs and indels) in the HSV resistance genes UL23 and UL30, applies homopolymer-aware filtering, reconstructs codon-level amino-acid consequences using read-level linkage, and reports variant co-occurrence evidence.
 
@@ -8,7 +8,6 @@ hgene performs small-variant analysis (SNPs, MNVs and indels) in the HSV resista
 
 ![hgene pipeline workflow](docs/HSV_pipeline_flowchart.svg)
 
----
 
 ## Usage
 
