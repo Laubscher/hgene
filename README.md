@@ -1,8 +1,12 @@
 # hgene
 
-**Version:** CMV-0.0.3
+**Version:** 1.0.1
 
-hgene performs small-variant analysis (SNPs, MNVs and indels) in the CMV resistance genes, applies homopolymer-aware filtering, reconstructs codon-level amino-acid consequences using read-level linkage, and reports variant co-occurrence evidence.
+hgene performs small-variant analysis (SNPs, MNVs and indels) in the HSV resistance genes UL23 and UL30, applies homopolymer-aware filtering, reconstructs codon-level amino-acid consequences using read-level linkage, and reports variant co-occurrence evidence.
+
+---
+
+![hgene pipeline workflow](docs/HSV_pipeline_flowchart.svg)
 
 ---
 
@@ -12,7 +16,7 @@ hgene performs small-variant analysis (SNPs, MNVs and indels) in the CMV resista
 
 **Arguments**
 
-- `-v <virus>` — Virus reference key (e.g. HHV5)
+- `-v <virus>` — Virus reference key (e.g. HHV1, HHV2)
 - `-c <cpu>` — Number of threads (default: nproc)
 - `<input>` — Prefix or an uncompressed `.fastq` file
 
@@ -34,7 +38,7 @@ _- Reads containing internal adapters are fully discarded_
 
 ### BAM filtering
 - Minimum mapping quality: **MAPQ ≥ 40**
-- Minimum aligned reference span: **≥ 100 bp**
+- Minimum aligned reference span: **≥ 1000 bp**
 
 ### Variant calling (LoFreq)
 - Default LoFreq filters disabled
@@ -49,7 +53,7 @@ _- Reads containing internal adapters are fully discarded_
   - **AF ≥ 0.40** when `HRUN ≥ 4`
   - **AF ≥ 0.20** when `HRUN < 4` or missing
 
-### Codon phasing
+### Codon reconstruction and linkage
 - Codon-level variant reconstruction uses read-level evidence
 - Minimum haplotype allele frequency: **0.10**
 - Minimum informative reads: **10**
@@ -119,7 +123,7 @@ _In french_
 
 ## Custom report template
 
-Users can provide a custom `template.docx` by placing it in `$HOME/template/cmv/`. If detected, it will automatically be used for report generation. If no template is found, the default built-in template is used.
+Users can provide a custom `template.docx` by placing it in `$HOME/template/hsv-1/` or `$HOME/template/hsv-2/`. If detected, it will automatically be used for report generation. If no template is found, the default built-in template is used.
 
 ---
 
