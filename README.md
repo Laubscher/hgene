@@ -1,6 +1,6 @@
 # hgene
 
-**Version:** CMV-0.0.1
+**Version:** CMV-0.0.3
 
 hgene performs small-variant analysis (SNPs, MNVs and indels) in the CMV resistance genes, applies homopolymer-aware filtering, reconstructs codon-level amino-acid consequences using read-level linkage, and reports variant co-occurrence evidence.
 
