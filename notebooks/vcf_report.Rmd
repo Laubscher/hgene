@@ -8,12 +8,14 @@ output:
     theme: default
     highlight: espresso
 params:
-  input_db_dir: "data/db/hsv1"
   input_vcf_file: ""
+  input_db_dir: ""
   input_fasta: ""
   template_docx: ""
   output_docx_report: ""
   input_coverage_tsv: ""
+  input_analysis_number: ""
+  input_resistance_db_sha256: ""
 ---
 
 
@@ -144,20 +146,62 @@ query_vcf <- function(vcf_file) {
     mutate(DNA_CHANGE = str_glue("{POS}{REF}>{ALT}"))
 }
 
+read_resistance_metadata <- function(db_file) {
+  sheets <- readxl::excel_sheets(db_file)
+  if (!("metadata" %in% sheets)) {
+    return(tibble::tibble(key = character(), value = character()))
+  }
+
+  meta <- readxl::read_xlsx(db_file, sheet = "metadata", col_types = "text")
+  names(meta) <- tolower(gsub("[^A-Za-z0-9]+", "_", names(meta)))
+
+  if (all(c("key", "value") %in% names(meta))) {
+    meta |>
+      dplyr::select(key, value) |>
+      mutate(
+        key = as.character(key),
+        value = as.character(value)
+      )
+  } else if (ncol(meta) >= 2) {
+    meta |>
+      dplyr::select(1, 2) |>
+      stats::setNames(c("key", "value")) |>
+      mutate(
+        key = as.character(key),
+        value = as.character(value)
+      )
+  } else {
+    tibble::tibble(key = character(), value = character())
+  }
+}
+
+db_file <- file.path(params$input_db_dir, "resistances.xlsx")
+db_sheets <- readxl::excel_sheets(db_file)
+db_data_sheet <- db_sheets[db_sheets != "metadata"][1]
+db_meta <- read_resistance_metadata(db_file)
+db_name <- (db_meta |>
+  filter(key == "db_name") |>
+  pull(value))[1]
+if (is.null(db_name) || is.na(db_name) || db_name == "") {
+  db_name <- basename(normalizePath(params$input_db_dir, mustWork = FALSE))
+}
+
 ```
 
 |                                   |                                         |
 |-----------------------------------|-----------------------------------------|
-| Nom de la database de résistance: | ``r params$input_db_dir``               |
+| Nom de la database de résistance: | ``r db_name``                           |
+| Dossier de la database de résistance: | ``r params$input_db_dir``          |
 | Numéro d'accession référence:     | ``r ref_accession``                     |
 | Version du logiciel:              | ``r hgene_version``                     |
+| Numéro d'analyse:               | ``r params$input_analysis_number``      |
 | Nom du fichier VCF analysé:       | ``r params$input_vcf_file``             |
 | Nom du rapport produit:           | ``r params$output_docx_report``         |
 | Empreinte cryptographique (SHA-256) du conteneur : | ``r container_sha256`` |
 
 ```{r,message=FALSE}
 # Load data
-db <- readxl::read_xlsx(file.path(params$input_db_dir,"resistances.xlsx"))
+db <- readxl::read_xlsx(db_file, sheet = db_data_sheet)
 fa <- FaFile(file.path(params$input_fasta))
 mut <- query_vcf(params$input_vcf_file)
 coverage <- readr::read_tsv(params$input_coverage_tsv, show_col_types = FALSE)
@@ -274,9 +318,6 @@ mut |>
 ```
 
 
-
-
-
 # Génération du rapport clinique
 
 
@@ -351,13 +392,17 @@ docx_template <- params$template_docx
 if (is.null(docx_template) || docx_template == "" || !file.exists(docx_template)) {
   docx_template <- file.path(params$input_db_dir, "template.docx")
 }
+
 doc <- read_docx(docx_template) |>
   body_replace_all_text("SEQDATE",format(filemeta$run_date,"%Y-%m-%d"),fixed = TRUE) |>
   body_replace_all_text("IDTUBE",filemeta$tube_id,fixed = TRUE) |>
   body_replace_all_text("IDPATIENT",filemeta$initials_patient,fixed = TRUE) |>
   body_replace_all_text("_ACCESSIONNUMBER_",ref_accession, fixed = TRUE) |>
   body_replace_all_text("_VERSIONLOGICIEL_",hgene_version, fixed = TRUE) |>
-  body_replace_all_text("_EMPREINTE_",container_sha256, fixed = TRUE)
+  body_replace_all_text("_EMPREINTE_",container_sha256, fixed = TRUE) |>
+  body_replace_all_text("_DATABASE_", db_name, fixed = TRUE) |>
+  body_replace_all_text("_ANALYSISNUMBER_", params$input_analysis_number, fixed = TRUE) |>
+  body_replace_all_text("_DBEMPREINTE_", params$input_resistance_db_sha256, fixed = TRUE)
 
 doc <- body_replace_all_text(doc,"CONCLUSIONSDELANALYSE",concluding_sentence, fixed = TRUE)
 

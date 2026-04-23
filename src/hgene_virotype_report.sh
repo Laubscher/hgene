@@ -18,6 +18,7 @@ timestamp() { date "+%Y-%m-%d %H:%M:%S"; }
 log() { local level="$1"; shift; echo "[$(timestamp)] [$level] $*"; }
 info() { log "INFO" "$*"; }
 step() { log "STEP" "$*"; }
+warn() { log "WARN" "$*"; }
 error() { log "ERROR" "$*"; }
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
@@ -87,6 +88,10 @@ if [[ ! -s "${DB_DIR}/resistances.xlsx" ]]; then
   exit 1
 fi
 
+
+RESISTANCE_DB_FILE="${DB_DIR}/resistances.xlsx"
+RESISTANCE_DB_SHA256="$(sha256sum "${RESISTANCE_DB_FILE}" | awk '{print $1}')"
+
 # template par défaut
 DB_TEMPLATE="${DEFAULT_DB_DIR}/template.docx"
 
@@ -107,6 +112,7 @@ fi
 
 
 RUN_DIR="$(pwd)"
+ANALYSIS_NUMBER="$(basename "${RUN_DIR}")"
 OUTDIR="${RUN_DIR}/${prefix}_output"
 REPORT_DIR="${OUTDIR}/REPORT_${prefix}"
 mkdir -p "$REPORT_DIR"
@@ -148,7 +154,9 @@ Rscript -e "rmarkdown::render(
     input_fasta='${VT_ROOT}/db/${virus}.fasta',
     template_docx='${TEMPLATE_DOCX}',
     output_docx_report='${prefix}.vcf.gz.${DB_ID}.docx',
-    input_coverage_tsv='${REPORT_DIR}/coverage_summary.tsv'
+    input_coverage_tsv='${REPORT_DIR}/coverage_summary.tsv',
+    input_analysis_number='${ANALYSIS_NUMBER}',
+    input_resistance_db_sha256='${RESISTANCE_DB_SHA256}'
   ),
   knit_root_dir='${REPORT_DIR}',
   output_dir='${REPORT_DIR}',
