@@ -38,7 +38,8 @@ IFS=$'\n\t'
 # Args:
 #   $1 prefix
 #   $2 CPU
-#   $3 virus
+#   $3 Virus
+#   $4 Resistance DB directory
 
 usage() {
   cat >&2 <<'USAGE'
@@ -65,10 +66,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-[[ $# -eq 3 ]] || usage
+[[ $# -ge 3 && $# -le 4 ]] || usage
 prefix="$1"
 CPU="$2"
 virus="$3"
+HG_RESISTANCE_DB_DIR="${4:-}"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
 
@@ -112,5 +114,5 @@ fi
 
 if [[ "${virus}" == "HHV1" || "${virus}" == "HHV2" || "${virus}" == "HHV5" ]]; then
   step "step Virotyper report (hgene_virotype_report.sh)"
-  bash "${SCRIPT_DIR}/hgene_virotype_report.sh" "${virus}" "${prefix}" "${HG_TEMPLATE_DOCX:-}"
+  bash "${SCRIPT_DIR}/hgene_virotype_report.sh" "${virus}" "${prefix}" "${HG_TEMPLATE_DOCX:-}" "${HG_RESISTANCE_DB_DIR:-}"
 fi

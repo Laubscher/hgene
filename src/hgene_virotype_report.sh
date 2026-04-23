@@ -8,7 +8,7 @@ IFS=$'\n\t'
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  hgene_virotype_report.sh <virus> <prefix>
+  hgene_virotype_report.sh <virus> <prefix> [template.docx] [resistance_db_root]
 
 EOF
   exit 2
@@ -36,9 +36,59 @@ case "$virus" in
 esac
 
 USER_TEMPLATE="${3:-}"
+RESISTANCE_DB_ROOT="${4:-}"
+
+DEFAULT_DB_DIR="${VT_ROOT}/data/db/${DB_ID}"
+DB_DIR="${DEFAULT_DB_DIR}"
+
+if [[ -n "${RESISTANCE_DB_ROOT:-}" ]]; then
+  case "$virus" in
+    HHV1)
+      for candidate in \
+        "${RESISTANCE_DB_ROOT}/HHV1" \
+        "${RESISTANCE_DB_ROOT}/hsv1"
+      do
+        if [[ -s "${candidate}/resistances.chk.xlsx" ]]; then
+          DB_DIR="${candidate}"
+          info "Using external resistance DB directory: ${DB_DIR}"
+          break
+        fi
+      done
+      ;;
+    HHV2)
+      for candidate in \
+        "${RESISTANCE_DB_ROOT}/HHV2" \
+        "${RESISTANCE_DB_ROOT}/hsv2"
+      do
+        if [[ -s "${candidate}/resistances.chk.xlsx" ]]; then
+          DB_DIR="${candidate}"
+          info "Using external resistance DB directory: ${DB_DIR}"
+          break
+        fi
+      done
+      ;;
+    HHV5)
+      for candidate in \
+        "${RESISTANCE_DB_ROOT}/HHV5" \
+        "${RESISTANCE_DB_ROOT}/cmv"
+      do
+        if [[ -s "${candidate}/resistances.chk.xlsx" ]]; then
+          DB_DIR="${candidate}"
+          info "Using external resistance DB directory: ${DB_DIR}"
+          break
+        fi
+      done
+      ;;
+  esac
+fi
+
+if [[ ! -s "${DB_DIR}/resistances.chk.xlsx" ]]; then
+  echo "ERROR: missing resistance DB file: ${DB_DIR}/resistances.chk.xlsx" >&2
+  exit 1
+fi
 
 # template par défaut
-DB_TEMPLATE="${VT_ROOT}/data/db/${DB_ID}/template.docx"
+DB_TEMPLATE="${DEFAULT_DB_DIR}/template.docx"
 
 
 if [[ -n "${USER_TEMPLATE:-}" ]]; then
@@ -94,7 +144,7 @@ Rscript -e "rmarkdown::render(
   '${REPORT_DIR}/vcf_report.Rmd',
   params=list(
     input_vcf_file='${VCF_SRC}',
-    input_db_dir='${VT_ROOT}/data/db/${DB_ID}',
+    input_db_dir='${DB_DIR}',
     input_fasta='${VT_ROOT}/db/${virus}.fasta',
     template_docx='${TEMPLATE_DOCX}',
     output_docx_report='${prefix}.vcf.gz.${DB_ID}.docx',

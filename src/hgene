@@ -11,11 +11,12 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && p
 usage() {
   cat >&2 <<'USAGE'
 Usage:
-  hgene -v <virus> [-c <cpu>] <prefix|prefix.fastq>
+  hgene -v <virus> [-c <cpu>] [-r <resistance_db_root>] <prefix|prefix.fastq>
 
 Arguments:
   -v <virus>       Virus reference key (e.g. HHV1, HHV2, HHV5)
   -c <cpu>         Threads (default: nproc)
+  -r <path>        Root directory containing external resistance DB folders
   <input>          Prefix or a .fastq file (uncompressed)
 
 Notes:
@@ -36,12 +37,14 @@ die() { error "$*"; exit 1; }
 # -------------------- args --------------------
 virus=""
 CPU="$(nproc)"
+HG_RESISTANCE_DB_DIR=""
 
-while getopts ":hv:c:" opt; do
+while getopts ":hv:c:r:" opt; do
   case "$opt" in
     h) usage ;;
     v) virus="$OPTARG" ;;
     c) CPU="$OPTARG" ;;
+    r) HG_RESISTANCE_DB_DIR="$OPTARG" ;;
     \?) die "Unknown option: -$OPTARG (use -h)" ;;
     :) die "Option -$OPTARG requires an argument" ;;
   esac
@@ -88,6 +91,6 @@ fi
 [[ -s "${prefix}.fastq" ]] || die "Input FASTQ not found: ${prefix}.fastq"
 
 step "Running hgene_main.sh"
-"${SCRIPT_DIR}/hgene_main.sh" "$prefix" "$CPU" "$virus"
+"${SCRIPT_DIR}/hgene_main.sh" "$prefix" "$CPU" "$virus" "${HG_RESISTANCE_DB_DIR:-}"
 
 info "hgene finished"
