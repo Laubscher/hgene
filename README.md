@@ -1,8 +1,8 @@
 # hgene
 
-**Version:** 1.0.1
+**Version:** 1.1.0-dev
 
-hgene performs small-variant analysis (SNPs, MNVs and indels) in the HSV resistance genes UL23 and UL30, applies homopolymer-aware filtering, reconstructs codon-level amino-acid consequences using read-level linkage, and reports variant co-occurrence evidence.
+hgene performs small-variant analysis (SNPs, MNVs and indels) in herpesvirus resistance genes, applies homopolymer-aware filtering, reconstructs codon-level amino-acid consequences using read-level linkage, and reports variant co-occurrence evidence.  
 
 ---
 
@@ -16,7 +16,7 @@ hgene performs small-variant analysis (SNPs, MNVs and indels) in the HSV resista
 
 **Arguments**
 
-- `-v <virus>` — Virus reference key (e.g. HHV1, HHV2)
+- `-v <virus>` — Virus reference key (e.g. HHV1, HHV2, HHV5)
 - `-c <cpu>` — Number of threads (default: nproc)
 - `<input>` — Prefix or an uncompressed `.fastq` file
 
@@ -38,7 +38,9 @@ _- Reads containing internal adapters are fully discarded_
 
 ### BAM filtering
 - Minimum mapping quality: **MAPQ ≥ 40**
-- Minimum aligned reference span: **≥ 1000 bp**
+- Minimum aligned reference span:
+  - **HSV:** ≥ 1000 bp
+  - **CMV:** ≥ 100 bp
 
 ### Variant calling (LoFreq)
 - Default LoFreq filters disabled

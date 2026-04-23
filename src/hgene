@@ -14,7 +14,7 @@ Usage:
   hgene -v <virus> [-c <cpu>] <prefix|prefix.fastq>
 
 Arguments:
-  -v <virus>       Virus reference key (e.g. HHV1, HHV2)
+  -v <virus>       Virus reference key (e.g. HHV1, HHV2, HHV5)
   -c <cpu>         Threads (default: nproc)
   <input>          Prefix or a .fastq file (uncompressed)
 
