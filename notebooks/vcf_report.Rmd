@@ -157,7 +157,7 @@ query_vcf <- function(vcf_file) {
 
 ```{r,message=FALSE}
 # Load data
-db <- readxl::read_xlsx(file.path(params$input_db_dir,"resistances.chk.xlsx"))
+db <- readxl::read_xlsx(file.path(params$input_db_dir,"resistances.xlsx"))
 fa <- FaFile(file.path(params$input_fasta))
 mut <- query_vcf(params$input_vcf_file)
 coverage <- readr::read_tsv(params$input_coverage_tsv, show_col_types = FALSE)

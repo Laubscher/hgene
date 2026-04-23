@@ -48,7 +48,7 @@ if [[ -n "${RESISTANCE_DB_ROOT:-}" ]]; then
         "${RESISTANCE_DB_ROOT}/HHV1" \
         "${RESISTANCE_DB_ROOT}/hsv1"
       do
-        if [[ -s "${candidate}/resistances.chk.xlsx" ]]; then
+        if [[ -s "${candidate}/resistances.xlsx" ]]; then
           DB_DIR="${candidate}"
           info "Using external resistance DB directory: ${DB_DIR}"
           break
@@ -60,7 +60,7 @@ if [[ -n "${RESISTANCE_DB_ROOT:-}" ]]; then
         "${RESISTANCE_DB_ROOT}/HHV2" \
         "${RESISTANCE_DB_ROOT}/hsv2"
       do
-        if [[ -s "${candidate}/resistances.chk.xlsx" ]]; then
+        if [[ -s "${candidate}/resistances.xlsx" ]]; then
           DB_DIR="${candidate}"
           info "Using external resistance DB directory: ${DB_DIR}"
           break
@@ -72,7 +72,7 @@ if [[ -n "${RESISTANCE_DB_ROOT:-}" ]]; then
         "${RESISTANCE_DB_ROOT}/HHV5" \
         "${RESISTANCE_DB_ROOT}/cmv"
       do
-        if [[ -s "${candidate}/resistances.chk.xlsx" ]]; then
+        if [[ -s "${candidate}/resistances.xlsx" ]]; then
           DB_DIR="${candidate}"
           info "Using external resistance DB directory: ${DB_DIR}"
           break
@@ -82,8 +82,8 @@ if [[ -n "${RESISTANCE_DB_ROOT:-}" ]]; then
   esac
 fi
 
-if [[ ! -s "${DB_DIR}/resistances.chk.xlsx" ]]; then
-  echo "ERROR: missing resistance DB file: ${DB_DIR}/resistances.chk.xlsx" >&2
+if [[ ! -s "${DB_DIR}/resistances.xlsx" ]]; then
+  echo "ERROR: missing resistance DB file: ${DB_DIR}/resistances.xlsx" >&2
   exit 1
 fi
 
