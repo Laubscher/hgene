@@ -1,6 +1,6 @@
 # hgene
 
-**Version:** 1.1.0-dev
+**Version:** 1.1.0
 
 hgene performs small-variant analysis (SNPs, MNVs and indels) in herpesvirus resistance genes, applies homopolymer-aware filtering, reconstructs codon-level amino-acid consequences using read-level linkage, and reports variant co-occurrence evidence.  
 
@@ -12,15 +12,14 @@ hgene performs small-variant analysis (SNPs, MNVs and indels) in herpesvirus res
 
 ## Usage
 
-`hgene -v <virus> [-c <cpu>] <prefix|prefix.fastq>`
+`hgene -v <virus> [-c <cpu>] [-r <resistance_db_dir>] <prefix|prefix.fastq>`
 
 **Arguments**
 
-- `-v <virus>` — Virus reference key (e.g. HHV1, HHV2, HHV5)
-- `-c <cpu>` — Number of threads (default: nproc)
-- `<input>` — Prefix or an uncompressed `.fastq` file
-
-**Notes**
+- `-v <virus>` — Virus reference key (`HHV1`, `HHV2`, `HHV5`)
+- `-c <cpu>` — Number of CPU threads/jobs to use (default: `nproc`)
+- `-r <resistance_db_dir>` — Resistance database directory used for variant interpretation and report generation
+- `<input>` — Input prefix or uncompressed `.fastq` file
 
 - `.fq` files are not supported
 - Compressed files (`.gz`) are not supported
@@ -85,7 +84,8 @@ sample_output/
 ├── REPORT_sample
 │   ├── sample_bam.html
 │   ├── sample.html
-│   └── sample.vcf.gz.<virus>.docx
+│   ├── sample.vcf.gz.<virus>.docx
+│   └── coverage_summary.tsv
 ├── VCF_sample
 │   ├── sample.bcf.vcf.gz
 │   ├── sample.filtered.vcf.gz

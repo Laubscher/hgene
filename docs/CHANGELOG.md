@@ -2,9 +2,16 @@
 
 All notable changes to **hgene** are documented in this file.
 
-## [1.0.2]
+## [1.1.0]
 
-- merged hsv/cmv branches.
+### Added
+- Support for CMV reporting, including HHV5 genes and resistance interpretation.
+- Parallelized Porechop preprocessing using the configured CPU/thread count.
+
+### Changed
+- Merged the previous HSV and CMV branches into a single codebase.
+- Updated pipeline structure to use external database folders instead of hardcoded internal references.
+- Improved traceability of analyses through database and analysis metadata.
 
 ---
 
