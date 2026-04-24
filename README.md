@@ -21,6 +21,8 @@ hgene performs small-variant analysis (SNPs, MNVs and indels) in herpesvirus res
 - `-r <resistance_db_dir>` — Resistance database directory used for variant interpretation and report generation
 - `<input>` — Input prefix or uncompressed `.fastq` file
 
+**Notes** 
+
 - `.fq` files are not supported
 - Compressed files (`.gz`) are not supported
 
