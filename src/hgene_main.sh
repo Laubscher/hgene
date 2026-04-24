@@ -80,8 +80,8 @@ need_cmd bash
 [[ -s "${prefix}.fastq" ]] || die "Input FASTQ not found: ${prefix}.fastq"
 
 step "Adapter trimming (porechop)"
-# keep porechop quiet; errors still surface
-porechop -t "$CPU" --discard_middle -i "${prefix}.fastq" -o "${prefix}.trimmed.fastq" >/dev/null # trimming
+
+bash "$SCRIPT_DIR/hgene_split_and_porechop.sh" "${prefix}.fastq" "${prefix}.trimmed.fastq" "$CPU"
 
 step "Mapping to reference (hgene_map.sh)"
 bash "${SCRIPT_DIR}/hgene_map.sh" "${prefix}.trimmed.fastq" "$virus" "$CPU" "$prefix"
