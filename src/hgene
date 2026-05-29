@@ -11,17 +11,20 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && p
 usage() {
   cat >&2 <<'USAGE'
 Usage:
-  hgene -v <virus> [-c <cpu>] [-r <resistance_db_root>] <prefix|prefix.fastq>
+  hgene -v <virus> [-c <cpu>] [-r <resistance_db_root>] [-m ont] <prefix|prefix.fastq>
+  hgene -v <virus> [-c <cpu>] [-r <resistance_db_root>] -m illumina-comparison <R1.fastq.gz> <R2.fastq.gz>
 
 Arguments:
   -v <virus>       Virus reference key (e.g. HHV1, HHV2, HHV5)
   -c <cpu>         Threads (default: nproc)
   -r <path>        Root directory containing external resistance DB folders
-  <input>          Prefix or a .fastq file (uncompressed)
+  -m <mode>        Analysis mode: ont or illumina-comparison [default: ont]
+  <input>          ONT: prefix or uncompressed .fastq
+  <R1> <R2>        Illumina-comparison: paired-end FASTQ files (.fastq.gz, .fq.gz, .fastq, .fq)
 
 Notes:
-  - .fq is not supported
-  - .gz is not supported
+  - ONT mode keeps the historical hgene behavior and does not support .gz
+  - Illumina-comparison mode is for technical comparison only, not clinical interpretation
 USAGE
   exit 2
 }
@@ -38,30 +41,73 @@ die() { error "$*"; exit 1; }
 virus=""
 CPU="$(nproc)"
 HG_RESISTANCE_DB_DIR=""
+mode="ont"
 
-while getopts ":hv:c:r:" opt; do
+while getopts ":hv:c:r:m:" opt; do
   case "$opt" in
     h) usage ;;
     v) virus="$OPTARG" ;;
     c) CPU="$OPTARG" ;;
     r) HG_RESISTANCE_DB_DIR="$OPTARG" ;;
+    m) mode="$OPTARG" ;;
     \?) die "Unknown option: -$OPTARG (use -h)" ;;
     :) die "Option -$OPTARG requires an argument" ;;
   esac
 done
 shift $((OPTIND-1))
 
-input="${1:-}"
-[[ -n "$input" ]] || usage
+input1="${1:-}"
+input2="${2:-}"
+
 [[ -n "$virus" ]] || die "Missing -v <virus> (use -h)"
 
-# Refuse gz
-[[ "$input" != *.gz ]] || die "Compressed FASTQ (.gz) not supported. Provide uncompressed .fastq."
+if [[ "$mode" != "ont" && "$mode" != "illumina-comparison" ]]; then
+  die "Invalid mode: $mode. Expected: ont or illumina-comparison"
+fi
 
-# Normalize prefix: accept either "sample" or "sample.fastq"
-prefix="$input"
-if [[ "$input" == *.fastq ]]; then
-  prefix="${input%.fastq}"
+# -------------------- normalize inputs --------------------
+if [[ "$mode" == "ont" ]]; then
+  [[ -n "$input1" ]] || usage
+  [[ -z "$input2" ]] || die "ONT mode expects one input FASTQ or prefix, not two inputs"
+
+  # Historical hgene behavior: refuse gz in ONT mode
+  [[ "$input1" != *.gz ]] || die "Compressed FASTQ (.gz) not supported in ONT mode. Provide uncompressed .fastq."
+
+  # Normalize prefix: accept either "sample" or "sample.fastq"
+  prefix="$input1"
+  if [[ "$input1" == *.fastq ]]; then
+    prefix="${input1%.fastq}"
+  fi
+
+  [[ "$prefix" != *.fq ]] || die ".fq is not supported in ONT mode. Provide .fastq or a prefix."
+
+  INPUT_FASTQ="${prefix}.fastq"
+  [[ -s "$INPUT_FASTQ" ]] || die "Input FASTQ not found: ${INPUT_FASTQ}"
+
+elif [[ "$mode" == "illumina-comparison" ]]; then
+  [[ -n "$input1" && -n "$input2" ]] || die "Illumina-comparison mode expects R1 and R2 FASTQ files"
+  [[ -s "$input1" ]] || die "R1 FASTQ not found: $input1"
+  [[ -s "$input2" ]] || die "R2 FASTQ not found: $input2"
+
+  case "$input1" in
+    *.fastq.gz|*.fq.gz|*.fastq|*.fq) ;;
+    *) die "Unsupported R1 extension: $input1. Expected .fastq.gz, .fq.gz, .fastq, or .fq" ;;
+  esac
+
+  case "$input2" in
+    *.fastq.gz|*.fq.gz|*.fastq|*.fq) ;;
+    *) die "Unsupported R2 extension: $input2. Expected .fastq.gz, .fq.gz, .fastq, or .fq" ;;
+  esac
+
+  prefix="$(basename "$input1")"
+  prefix="${prefix%.fastq.gz}"
+  prefix="${prefix%.fq.gz}"
+  prefix="${prefix%.fastq}"
+  prefix="${prefix%.fq}"
+  prefix="${prefix%_R1}"
+  prefix="${prefix%_R2}"
+  prefix="${prefix%_1}"
+  prefix="${prefix%_2}"
 fi
 
 # -------------------- check virus exists --------------------
@@ -77,7 +123,15 @@ LOG="${prefix}.log"
 exec > >(tee -a "$LOG") 2>&1
 
 info "hgene started"
-info "prefix=$prefix virus=$virus cpu=$CPU"
+info "prefix=$prefix virus=$virus cpu=$CPU mode=$mode"
+
+if [[ "$mode" == "illumina-comparison" ]]; then
+  warn "Illumina-comparison mode is intended for technical comparison only and is not clinically validated"
+  info "R1=$input1"
+  info "R2=$input2"
+else
+  info "input=${prefix}.fastq"
+fi
 
 # Singularity context
 if [[ -n "${SINGULARITY_CONTAINER:-}" ]]; then
@@ -87,10 +141,7 @@ if [[ -n "${SINGULARITY_CONTAINER:-}" ]]; then
   fi
 fi
 
-# -------------------- input FASTQ check --------------------
-[[ -s "${prefix}.fastq" ]] || die "Input FASTQ not found: ${prefix}.fastq"
-
 step "Running hgene_main.sh"
-"${SCRIPT_DIR}/hgene_main.sh" "$prefix" "$CPU" "$virus" "${HG_RESISTANCE_DB_DIR:-}"
+"${SCRIPT_DIR}/hgene_main.sh" "$prefix" "$CPU" "$virus" "${HG_RESISTANCE_DB_DIR:-}" "$mode" "$input1" "${input2:-}"
 
 info "hgene finished"
