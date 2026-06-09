@@ -39,10 +39,13 @@ rmf() { rm -f -- "$@" 2>/dev/null || true; }
 index_vcfgz() { bcftools index --csi "$1"; }
 
 # -------------------- args --------------------
-[[ $# -eq 3 ]] || usage
+[[ $# -eq 4 ]] || usage
 prefix="$1"
 virus="$2"
 CPU="$3"
+mode="${4:-ont}"
+
+[[ "$mode" == "ont" || "$mode" == "illumina-comparison" ]] || die "Invalid mode: $mode. Expected: ont or illumina-comparison"
 
 # -------------------- deps --------------------
 need_cmd samtools
@@ -135,11 +138,14 @@ end_timer
 step "samtools view length filter"
 start_timer
 
-if [[ "$virus" == "HHV5" ]]; then
-  samtools view -e 'rlen>99'  -O BAM -o "${TMPDIR}/${prefix}.filtered.bam" "${TMPDIR}/${prefix}.filtered2.bam"
+if [[ "$mode" == "illumina-comparison" ]]; then
+  samtools view -e 'rlen>49' -O BAM -o "${TMPDIR}/${prefix}.filtered.bam" "${TMPDIR}/${prefix}.filtered2.bam"
+elif [[ "$virus" == "HHV5" ]]; then
+  samtools view -e 'rlen>99' -O BAM -o "${TMPDIR}/${prefix}.filtered.bam" "${TMPDIR}/${prefix}.filtered2.bam"
 else
   samtools view -e 'rlen>999' -O BAM -o "${TMPDIR}/${prefix}.filtered.bam" "${TMPDIR}/${prefix}.filtered2.bam"
 fi
+
 end_timer
 
 step "samtools sort/index (filtered)"

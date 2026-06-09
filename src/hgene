@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && p
 usage() {
   cat >&2 <<'USAGE'
 Usage:
-  hgene -v <virus> [-c <cpu>] [-r <resistance_db_root>] [-m ont] <prefix|prefix.fastq>
+  hgene -v <virus> [-c <cpu>] [-r <resistance_db_root>] [-m <mode>] <prefix|prefix.fastq>
   hgene -v <virus> [-c <cpu>] [-r <resistance_db_root>] -m illumina-comparison <R1.fastq.gz> <R2.fastq.gz>
 
 Arguments:
@@ -24,7 +24,7 @@ Arguments:
 
 Notes:
   - ONT mode keeps the historical hgene behavior and does not support .gz
-  - Illumina-comparison mode is for technical comparison only, not clinical interpretation
+  - Illumina-comparison mode is for technical comparison only.
 USAGE
   exit 2
 }
@@ -79,7 +79,7 @@ if [[ "$mode" == "ont" ]]; then
     prefix="${input1%.fastq}"
   fi
 
-  [[ "$prefix" != *.fq ]] || die ".fq is not supported in ONT mode. Provide .fastq or a prefix."
+  [[ "$prefix" != *.fq ]] || die ".fq is not supported in ONT mode. Provide .fastq."
 
   INPUT_FASTQ="${prefix}.fastq"
   [[ -s "$INPUT_FASTQ" ]] || die "Input FASTQ not found: ${INPUT_FASTQ}"
@@ -104,10 +104,26 @@ elif [[ "$mode" == "illumina-comparison" ]]; then
   prefix="${prefix%.fq.gz}"
   prefix="${prefix%.fastq}"
   prefix="${prefix%.fq}"
+  prefix="${prefix%_R1_001}"
+  prefix="${prefix%_R2_001}"
   prefix="${prefix%_R1}"
   prefix="${prefix%_R2}"
   prefix="${prefix%_1}"
   prefix="${prefix%_2}"
+
+  prefix2="$(basename "$input2")"
+  prefix2="${prefix2%.fastq.gz}"
+  prefix2="${prefix2%.fq.gz}"
+  prefix2="${prefix2%.fastq}"
+  prefix2="${prefix2%.fq}"
+  prefix2="${prefix2%_R1_001}"
+  prefix2="${prefix2%_R2_001}"
+  prefix2="${prefix2%_R1}"
+  prefix2="${prefix2%_R2}"
+  prefix2="${prefix2%_1}"
+  prefix2="${prefix2%_2}"
+
+  [[ "$prefix" == "$prefix2" ]] || die "R1/R2 sample prefix mismatch: R1=$prefix R2=$prefix2"
 fi
 
 # -------------------- check virus exists --------------------
@@ -126,7 +142,7 @@ info "hgene started"
 info "prefix=$prefix virus=$virus cpu=$CPU mode=$mode"
 
 if [[ "$mode" == "illumina-comparison" ]]; then
-  warn "Illumina-comparison mode is intended for technical comparison only and is not clinically validated"
+  warn "Illumina-comparison mode is intended for technical comparison only and is not validated"
   info "R1=$input1"
   info "R2=$input2"
 else

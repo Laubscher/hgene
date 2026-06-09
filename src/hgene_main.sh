@@ -3,7 +3,7 @@
 # Part of: hgene pipeline
 
 set -euo pipefail
-
+IFS=$'\n\t'
 
 get_hg_version() {
   local here verfile
@@ -28,25 +28,14 @@ get_hg_version() {
 HG_VERSION="$(get_hg_version)"
 export HG_VERSION
 
-if declare -F info >/dev/null 2>&1; then
-  info "HG_VERSION=$HG_VERSION"
-fi
-# ------------------------------------------------------------------
-
-IFS=$'\n\t'
-
-# Args:
-#   $1 prefix
-#   $2 CPU
-#   $3 Virus
-#   $4 Resistance DB directory
-
 usage() {
   cat >&2 <<'USAGE'
-Usage: hgene_main.sh <prefix> <CPU> <virus>
+Usage:
+  hgene_main.sh <prefix> <CPU> <virus> [resistance_db_dir] [mode] [input1] [input2]
 
-Expects:
-  <prefix>.fastq
+Modes:
+  ont                  ONT mode. Expects <prefix>.fastq.
+  illumina-comparison  Paired-end Illumina comparison mode. Expects input1=R1 and input2=R2.
 USAGE
   exit 2
 }
@@ -57,37 +46,73 @@ info() { log "INFO" "$*"; }
 step() { log "STEP" "$*"; }
 warn() { log "WARN" "$*"; }
 error() { log "ERROR" "$*"; }
-
 die() { error "$*"; exit 1; }
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"; }
 
-cleanup() {
-    rm -f "${prefix}.sam" "${prefix}.trimmed.fastq" 2>/dev/null || true
-}
-trap cleanup EXIT
+# Args:
+#   $1 prefix
+#   $2 CPU
+#   $3 virus
+#   $4 resistance DB directory
+#   $5 mode
+#   $6 input1
+#   $7 input2
 
-[[ $# -ge 3 && $# -le 4 ]] || usage
+[[ $# -ge 3 && $# -le 7 ]] || usage
+
 prefix="$1"
 CPU="$2"
 virus="$3"
 HG_RESISTANCE_DB_DIR="${4:-}"
+mode="${5:-ont}"
+input1="${6:-}"
+input2="${7:-}"
+
+[[ "$mode" == "ont" || "$mode" == "illumina-comparison" ]] || die "Invalid mode: $mode. Expected: ont or illumina-comparison"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
 
-need_cmd porechop
+info "HG_VERSION=$HG_VERSION"
+info "hgene_main started"
+info "prefix=$prefix virus=$virus cpu=$CPU mode=$mode"
+
+cleanup() {
+  rm -f "${prefix}.sam" "${prefix}.trimmed.fastq" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 need_cmd bash
 
-[[ -s "${prefix}.fastq" ]] || die "Input FASTQ not found: ${prefix}.fastq"
+# -------------------- preprocessing + mapping --------------------
 
-step "Adapter trimming (porechop)"
+if [[ "$mode" == "ont" ]]; then
+  need_cmd porechop
 
-bash "$SCRIPT_DIR/hgene_split_and_porechop.sh" "${prefix}.fastq" "${prefix}.trimmed.fastq" "$CPU"
+  ONT_FASTQ="${prefix}.fastq"
+  [[ -s "$ONT_FASTQ" ]] || die "Input FASTQ not found: $ONT_FASTQ"
 
-step "Mapping to reference (hgene_map.sh)"
-bash "${SCRIPT_DIR}/hgene_map.sh" "${prefix}.trimmed.fastq" "$virus" "$CPU" "$prefix"
+  step "Adapter trimming (porechop)"
+  bash "$SCRIPT_DIR/hgene_split_and_porechop.sh" "$ONT_FASTQ" "${prefix}.trimmed.fastq" "$CPU"
+
+  step "Mapping to reference (hgene_map.sh)"
+  bash "${SCRIPT_DIR}/hgene_map.sh" "${prefix}.trimmed.fastq" "$virus" "$CPU" "$prefix"
+
+elif [[ "$mode" == "illumina-comparison" ]]; then
+  [[ -n "$input1" && -n "$input2" ]] || die "Illumina-comparison mode expects R1 and R2 FASTQ files"
+  [[ -s "$input1" ]] || die "R1 FASTQ not found: $input1"
+  [[ -s "$input2" ]] || die "R2 FASTQ not found: $input2"
+
+  warn "Illumina-comparison mode: skipping porechop"
+  warn "Illumina-comparison mode is intended for technical comparison only and is not validated"
+
+  step "Mapping paired-end Illumina reads to reference (hgene_map_illumina.sh)"
+  bash "${SCRIPT_DIR}/hgene_map_illumina.sh" "$input1" "$input2" "$virus" "$CPU" "$prefix"
+fi
+
+# -------------------- variant calling --------------------
 
 step "Variant calling (hgene_variant_call.sh)"
-bash "${SCRIPT_DIR}/hgene_variant_call.sh" "$prefix" "$virus" "$CPU"
+bash "${SCRIPT_DIR}/hgene_variant_call.sh" "$prefix" "$virus" "$CPU" "$mode"
 
 
 # --- Auto user template based on virus ---
@@ -116,3 +141,5 @@ if [[ "${virus}" == "HHV1" || "${virus}" == "HHV2" || "${virus}" == "HHV5" ]]; t
   step "step Virotyper report (hgene_virotype_report.sh)"
   bash "${SCRIPT_DIR}/hgene_virotype_report.sh" "${virus}" "${prefix}" "${HG_TEMPLATE_DOCX:-}" "${HG_RESISTANCE_DB_DIR:-}"
 fi
+
+info "hgene_main finished"
