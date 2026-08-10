@@ -419,6 +419,23 @@ def join_french(items: Sequence[str]) -> str:
     return ", ".join(items[:-1]) + " et " + items[-1]
 
 
+def coverage_limit_text(
+    genes: Iterable[str], coverage: Mapping[str, CoverageStatus]
+) -> str:
+    low20 = [gene for gene in sorted(genes) if coverage.get(gene) and coverage[gene].low20]
+    low100 = [
+        gene
+        for gene in sorted(genes)
+        if coverage.get(gene) and coverage[gene].low100 and not coverage[gene].low20
+    ]
+    parts: list[str] = []
+    if low20:
+        parts.append(f"couverture partiellement <20x pour {join_french(low20)}")
+    if low100:
+        parts.append(f"couverture partiellement <100x pour {join_french(low100)}")
+    return "; ".join(parts)
+
+
 def unique_matches(matches: Iterable[ResistanceMatch]) -> list[ResistanceMatch]:
     result: list[ResistanceMatch] = []
     seen: set[tuple[str, int, str, str, float | None]] = set()
@@ -595,10 +612,18 @@ def build_conclusion(
                 if len(resistant) == 1
                 else "des mutations de résistance"
             )
-            resistant_sentences.append(
+            sentence = (
                 f"Souche résistante {drug_preposition(drug)} : présence {mutation_label} "
                 f"{detail}."
             )
+            if coverage_limited:
+                limit_text = coverage_limit_text(coverage_limited, coverage)
+                limit_text = limit_text[:1].upper() + limit_text[1:]
+                sentence += (
+                    f" {limit_text} : "
+                    "la recherche d’autres mutations est limitée."
+                )
+            resistant_sentences.append(sentence)
         elif susceptible and coverage_complete:
             detail = join_french(
                 [format_mutation(match.variant, with_af=True) for match in susceptible]
@@ -608,12 +633,28 @@ def build_conclusion(
                 f"Souche sensible {drug_preposition(drug)} : présence {mutation_label} "
                 f"{detail}, associée à une susceptibilité {drug_preposition(drug)}."
             )
+        elif susceptible and coverage_limited:
+            detail = join_french(
+                [format_mutation(match.variant, with_af=True) for match in susceptible]
+            )
+            if len(susceptible) == 1:
+                mutation_label = "une mutation associée"
+                detected_label = "a été détectée"
+            else:
+                mutation_label = "des mutations associées"
+                detected_label = "ont été détectées"
+            limited_sentences.append(
+                f"Interprétation non concluante pour le "
+                f"{DRUG_LABELS.get(drug, drug.lower())} : {mutation_label} à une "
+                f"susceptibilité {drug_preposition(drug)} {detected_label} ({detail}), mais "
+                f"{coverage_limit_text(coverage_limited, coverage)}."
+            )
         elif coverage_complete:
             absence_susceptible.append(DRUG_LABELS.get(drug, drug.lower()))
         elif coverage_limited:
             limited_sentences.append(
                 f"Interprétation non concluante pour le {DRUG_LABELS.get(drug, drug.lower())} : "
-                f"couverture insuffisante de {join_french(coverage_limited)}."
+                f"{coverage_limit_text(coverage_limited, coverage)}."
             )
 
     sentences = resistant_sentences + susceptible_sentences
@@ -710,17 +751,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     for drug, gene in pairs:
-        pair_matches = unique_matches(
+        raw_pair_matches = [
             match
             for match in matches
             if match.drug == drug and match.variant.gene == gene
-        )
+        ]
+        pair_matches = unique_matches(raw_pair_matches)
         mutation_marker = f"_MUT-{drug}-{gene}_"
         interpretation_marker = f"_INT-{drug}-{gene}_"
         mutation_text = "\n".join(
             format_mutation(match.variant) for match in pair_matches
         )
-        classes = {mutation_class(match.mutation_type) for match in pair_matches}
+        classes = {mutation_class(match.mutation_type) for match in raw_pair_matches}
         classes.discard("")
         if "R" in classes:
             interpretation_text = f"Résistant {drug_preposition(drug)}"
@@ -732,12 +774,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         coverage_status = coverage.get(gene)
         if coverage_status and coverage_status.low20:
             shade_marker_cells(doc, (mutation_marker, interpretation_marker), "F4CCCC")
-            if not mutation_text:
+            if mutation_text and "R" in classes:
+                interpretation_text += (
+                    "\nCouverture <20x : recherche d’autres mutations limitée"
+                )
+            elif mutation_text:
+                interpretation_text = "Non concluante : couverture partiellement <20x"
+            else:
                 mutation_text = "Couverture partiellement <20x"
                 interpretation_text = "Non interprétable"
         elif coverage_status and coverage_status.low100:
             shade_marker_cells(doc, (mutation_marker, interpretation_marker), "FFF2CC")
-            if not mutation_text:
+            if mutation_text and "R" in classes:
+                interpretation_text += (
+                    "\nCouverture <100x : recherche des variants minoritaires limitée"
+                )
+            elif mutation_text:
+                interpretation_text = "Interprétation limitée : couverture partiellement <100x"
+            else:
                 mutation_text = "Couverture partiellement <100x"
                 interpretation_text = "Interprétation limitée"
 
