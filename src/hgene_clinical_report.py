@@ -87,6 +87,95 @@ class ResistanceMatch:
 
 
 @dataclass(frozen=True)
+class MutationTypeInfo:
+    aggregate_state: str
+    aggregate_rank: int
+    table_state: str | None = None
+    table_qualifier: str = ""
+    aggregate_qualifier: str = ""
+    recognized: bool = True
+
+
+MUTATION_TYPE_RULES: Mapping[str, MutationTypeInfo] = {
+    "Natural polymorphism": MutationTypeInfo(
+        "susceptible", 0, table_state="natural_polymorphism"
+    ),
+    "No resistance": MutationTypeInfo("susceptible", 0),
+    "Low level resistance": MutationTypeInfo(
+        "resistant",
+        1,
+        table_qualifier="faible niveau",
+        aggregate_qualifier="faible niveau",
+    ),
+    "Intermediate level resistance": MutationTypeInfo(
+        "resistant",
+        2,
+        table_qualifier="niveau intermédiaire",
+        aggregate_qualifier="niveau intermédiaire",
+    ),
+    "High level resistance": MutationTypeInfo(
+        "resistant",
+        3,
+        table_qualifier="haut niveau",
+        aggregate_qualifier="haut niveau",
+    ),
+    "Non-viable": MutationTypeInfo("non_viable", 0),
+    "Possible hypersensitivity, no resistance": MutationTypeInfo(
+        "susceptible",
+        0,
+        table_qualifier="hypersensibilité possible",
+    ),
+    "No more than Low level resistance": MutationTypeInfo(
+        "resistant",
+        1,
+        table_qualifier="niveau faible au maximum",
+        aggregate_qualifier="faible niveau",
+    ),
+    "At least Intermediate level resistance": MutationTypeInfo(
+        "resistant",
+        2,
+        table_qualifier="niveau au moins intermédiaire",
+    ),
+    "At least High level resistance": MutationTypeInfo(
+        "resistant",
+        3,
+        table_qualifier="niveau au moins élevé",
+        aggregate_qualifier="haut niveau",
+    ),
+    "Range of values of No resistance": MutationTypeInfo(
+        "susceptible",
+        0,
+        table_qualifier="plage de valeurs sans résistance",
+    ),
+    "Range of values of High level resistance": MutationTypeInfo(
+        "resistant",
+        3,
+        table_qualifier="plage de valeurs de haut niveau",
+        aggregate_qualifier="haut niveau",
+    ),
+    "Range of values between No resistance and Intermediate level resistance": (
+        MutationTypeInfo("indeterminate", 2, table_state="variable")
+    ),
+    "Range of values between Low level resistance and Intermediate level resistance": (
+        MutationTypeInfo(
+            "resistant",
+            2,
+            table_qualifier="niveau faible à intermédiaire",
+            aggregate_qualifier="niveau intermédiaire",
+        )
+    ),
+    "Range of values between Intermediate level resistance and High level resistance": (
+        MutationTypeInfo(
+            "resistant",
+            3,
+            table_qualifier="niveau intermédiaire à élevé",
+            aggregate_qualifier="haut niveau",
+        )
+    ),
+}
+
+
+@dataclass(frozen=True)
 class CoverageStatus:
     low20: bool
     low100: bool
@@ -103,12 +192,6 @@ def clean(value: object) -> str:
     if text.casefold() in {"", ".", "na", "n/a", "nan", "none", "unknown"}:
         return ""
     return text
-
-
-def ascii_key(value: object) -> str:
-    text = unicodedata.normalize("NFKD", clean(value))
-    text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    return re.sub(r"[^a-z0-9]+", "", text.casefold())
 
 
 def first_nonempty(*values: object) -> str:
@@ -373,13 +456,69 @@ def match_variants(
     return matches
 
 
-def mutation_class(value: str) -> str:
-    key = ascii_key(value).upper()
-    if key.startswith("R"):
-        return "R"
-    if key.startswith("S"):
-        return "S"
-    return ""
+def mutation_type_info(value: str) -> MutationTypeInfo:
+    """Interpret only the exact mutation_type values validated for CHARMD."""
+    return MUTATION_TYPE_RULES.get(
+        clean(value),
+        MutationTypeInfo("indeterminate", 0, recognized=False),
+    )
+
+
+def mutation_aggregate_state(value: str) -> str:
+    return mutation_type_info(value).aggregate_state
+
+
+def aggregate_mutation_types(
+    matches: Sequence[ResistanceMatch],
+) -> MutationTypeInfo | None:
+    if not matches:
+        return None
+    infos = [mutation_type_info(match.mutation_type) for match in matches]
+    state_priority = {
+        "susceptible": 1,
+        "non_viable": 2,
+        "indeterminate": 3,
+        "resistant": 4,
+    }
+    return max(
+        infos,
+        key=lambda info: (
+            state_priority.get(info.aggregate_state, 0),
+            info.aggregate_rank,
+            bool(info.aggregate_qualifier),
+        ),
+    )
+
+
+def mutation_interpretation_text(
+    drug: str, matches: Sequence[ResistanceMatch]
+) -> str:
+    info = aggregate_mutation_types(matches)
+    if info is None:
+        return ""
+    table_state = info.table_state or info.aggregate_state
+    if table_state == "resistant":
+        text = f"Résistant {drug_preposition(drug)}"
+    elif table_state == "susceptible":
+        text = f"Susceptible {drug_preposition(drug)}"
+    elif table_state == "natural_polymorphism":
+        text = "Polymorphisme naturel, non associé à une résistance"
+    elif table_state == "non_viable":
+        text = "Mutant non viable"
+    elif table_state == "variable":
+        text = (
+            "Interprétation variable pour le "
+            f"{DRUG_LABELS.get(drug, drug.lower())} : de susceptible à "
+            "résistant de niveau intermédiaire"
+        )
+    else:
+        text = (
+            "Interprétation indéterminée pour le "
+            f"{DRUG_LABELS.get(drug, drug.lower())}"
+        )
+    if info.table_qualifier:
+        text += f" ({info.table_qualifier})"
+    return text
 
 
 def format_protein_change(raw: str) -> str:
@@ -436,16 +575,24 @@ def coverage_limit_text(
     return "; ".join(parts)
 
 
-def unique_matches(matches: Iterable[ResistanceMatch]) -> list[ResistanceMatch]:
-    result: list[ResistanceMatch] = []
-    seen: set[tuple[str, int, str, str, float | None]] = set()
+def group_matches_by_variant(
+    matches: Iterable[ResistanceMatch],
+) -> list[list[ResistanceMatch]]:
+    groups: list[list[ResistanceMatch]] = []
+    indexes: dict[tuple[str, int, str, str, float | None], int] = {}
     for match in matches:
         variant = match.variant
         key = (variant.gene, variant.pos, variant.ref, variant.alt, variant.af)
-        if key not in seen:
-            seen.add(key)
-            result.append(match)
-    return result
+        if key in indexes:
+            groups[indexes[key]].append(match)
+        else:
+            indexes[key] = len(groups)
+            groups.append([match])
+    return groups
+
+
+def unique_matches(matches: Iterable[ResistanceMatch]) -> list[ResistanceMatch]:
+    return [group[0] for group in group_matches_by_variant(matches)]
 
 
 def iter_unique_cells(table) -> Iterator:
@@ -580,15 +727,30 @@ def build_conclusion(
 
     resistant_sentences: list[str] = []
     susceptible_sentences: list[str] = []
+    non_viable_sentences: list[str] = []
     limited_sentences: list[str] = []
     absence_susceptible: list[str] = []
     for drug in sorted(genes_by_drug, key=drug_sort_key):
         drug_matches = [match for match in matches if match.drug == drug]
         resistant = unique_matches(
-            match for match in drug_matches if mutation_class(match.mutation_type) == "R"
+            match
+            for match in drug_matches
+            if mutation_aggregate_state(match.mutation_type) == "resistant"
+        )
+        uncertain = unique_matches(
+            match
+            for match in drug_matches
+            if mutation_aggregate_state(match.mutation_type) == "indeterminate"
+        )
+        non_viable = unique_matches(
+            match
+            for match in drug_matches
+            if mutation_aggregate_state(match.mutation_type) == "non_viable"
         )
         susceptible = unique_matches(
-            match for match in drug_matches if mutation_class(match.mutation_type) == "S"
+            match
+            for match in drug_matches
+            if mutation_aggregate_state(match.mutation_type) == "susceptible"
         )
         required_genes = genes_by_drug[drug]
         statuses = [coverage.get(gene) for gene in required_genes]
@@ -604,6 +766,7 @@ def build_conclusion(
         ]
 
         if resistant:
+            overall = aggregate_mutation_types(drug_matches)
             detail = join_french(
                 [format_mutation(match.variant, with_af=True) for match in resistant]
             )
@@ -612,10 +775,30 @@ def build_conclusion(
                 if len(resistant) == 1
                 else "des mutations de résistance"
             )
+            resistance_level = (
+                f" ({overall.aggregate_qualifier})"
+                if overall and overall.aggregate_qualifier
+                else ""
+            )
             sentence = (
-                f"Souche résistante {drug_preposition(drug)} : présence {mutation_label} "
+                f"Souche résistante {drug_preposition(drug)}{resistance_level} : "
+                f"présence {mutation_label} "
                 f"{detail}."
             )
+            if uncertain:
+                uncertain_detail = join_french(
+                    [format_mutation(match.variant, with_af=True) for match in uncertain]
+                )
+                sentence += (
+                    " Une interprétation indéterminée est associée à "
+                    f"{uncertain_detail}."
+                )
+            if non_viable:
+                non_viable_detail = join_french(
+                    [format_mutation(match.variant, with_af=True) for match in non_viable]
+                )
+                label = "Mutant non viable" if len(non_viable) == 1 else "Mutants non viables"
+                sentence += f" {label} : {non_viable_detail}."
             if coverage_limited:
                 limit_text = coverage_limit_text(coverage_limited, coverage)
                 limit_text = limit_text[:1].upper() + limit_text[1:]
@@ -624,6 +807,39 @@ def build_conclusion(
                     "la recherche d’autres mutations est limitée."
                 )
             resistant_sentences.append(sentence)
+        elif uncertain:
+            overall = aggregate_mutation_types(uncertain)
+            detail = join_french(
+                [format_mutation(match.variant, with_af=True) for match in uncertain]
+            )
+            qualifier = (
+                f" ({overall.aggregate_qualifier})"
+                if overall and overall.aggregate_qualifier
+                else ""
+            )
+            sentence = (
+                "Interprétation non concluante pour le "
+                f"{DRUG_LABELS.get(drug, drug.lower())}{qualifier} : "
+                f"présence de {detail}."
+            )
+            if coverage_limited:
+                sentence += f" {coverage_limit_text(coverage_limited, coverage)}."
+            if non_viable:
+                non_viable_detail = join_french(
+                    [format_mutation(match.variant, with_af=True) for match in non_viable]
+                )
+                label = "Mutant non viable" if len(non_viable) == 1 else "Mutants non viables"
+                sentence += f" {label} : {non_viable_detail}."
+            limited_sentences.append(sentence)
+        elif non_viable:
+            detail = join_french(
+                [format_mutation(match.variant, with_af=True) for match in non_viable]
+            )
+            label = "Mutant non viable" if len(non_viable) == 1 else "Mutants non viables"
+            sentence = f"{label} : {detail}."
+            if coverage_limited:
+                sentence += f" {coverage_limit_text(coverage_limited, coverage)}."
+            non_viable_sentences.append(sentence)
         elif susceptible and coverage_complete:
             detail = join_french(
                 [format_mutation(match.variant, with_af=True) for match in susceptible]
@@ -657,7 +873,7 @@ def build_conclusion(
                 f"{coverage_limit_text(coverage_limited, coverage)}."
             )
 
-    sentences = resistant_sentences + susceptible_sentences
+    sentences = resistant_sentences + susceptible_sentences + non_viable_sentences
     if absence_susceptible:
         sentences.append(
             "Souche sensible aux antiviraux suivants : "
@@ -718,6 +934,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     db_records, db_meta, db_ok = read_resistance_db(args.resistance_db)
     coverage, coverage_ok = read_coverage(args.coverage)
     matches = match_variants(variants, db_records) if db_ok else []
+    unexpected_mutation_types = sorted(
+        {
+            clean(match.mutation_type) or "<vide>"
+            for match in matches
+            if not mutation_type_info(match.mutation_type).recognized
+        }
+    )
+    for mutation_type in unexpected_mutation_types:
+        warn(
+            f"unrecognized mutation_type {mutation_type!r}; "
+            "clinical interpretation set to indeterminate"
+        )
 
     sample_name = first_nonempty(
         args.sample_name,
@@ -756,41 +984,40 @@ def main(argv: Sequence[str] | None = None) -> int:
             for match in matches
             if match.drug == drug and match.variant.gene == gene
         ]
-        pair_matches = unique_matches(raw_pair_matches)
+        pair_match_groups = group_matches_by_variant(raw_pair_matches)
+        pair_matches = [group[0] for group in pair_match_groups]
         mutation_marker = f"_MUT-{drug}-{gene}_"
         interpretation_marker = f"_INT-{drug}-{gene}_"
         mutation_text = "\n".join(
             format_mutation(match.variant) for match in pair_matches
         )
-        classes = {mutation_class(match.mutation_type) for match in raw_pair_matches}
-        classes.discard("")
-        if "R" in classes:
-            interpretation_text = f"Résistant {drug_preposition(drug)}"
-        elif "S" in classes:
-            interpretation_text = f"Susceptible {drug_preposition(drug)}"
-        else:
-            interpretation_text = ""
+        interpretation_text = "\n".join(
+            mutation_interpretation_text(drug, group)
+            for group in pair_match_groups
+        )
+        pair_states = {
+            mutation_aggregate_state(match.mutation_type)
+            for match in raw_pair_matches
+        }
+        if pair_states.intersection({"indeterminate", "non_viable"}):
+            shade_marker_cells(doc, (mutation_marker, interpretation_marker), "FFF2CC")
 
         coverage_status = coverage.get(gene)
         if coverage_status and coverage_status.low20:
             shade_marker_cells(doc, (mutation_marker, interpretation_marker), "F4CCCC")
-            if mutation_text and "R" in classes:
+            if mutation_text:
                 interpretation_text += (
                     "\nCouverture <20x : recherche d’autres mutations limitée"
                 )
-            elif mutation_text:
-                interpretation_text = "Non concluante : couverture partiellement <20x"
             else:
                 mutation_text = "Couverture partiellement <20x"
                 interpretation_text = "Non interprétable"
         elif coverage_status and coverage_status.low100:
             shade_marker_cells(doc, (mutation_marker, interpretation_marker), "FFF2CC")
-            if mutation_text and "R" in classes:
+            if mutation_text:
                 interpretation_text += (
                     "\nCouverture <100x : recherche des variants minoritaires limitée"
                 )
-            elif mutation_text:
-                interpretation_text = "Interprétation limitée : couverture partiellement <100x"
             else:
                 mutation_text = "Couverture partiellement <100x"
                 interpretation_text = "Interprétation limitée"
