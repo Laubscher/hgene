@@ -90,7 +90,7 @@ RUN apt-get update && apt-get install -y \
       porechop \
 && rm -rf /var/cache/apt/* /var/lib/apt/lists/*; ln -s /usr/bin/python3 /usr/bin/python
 
-RUN pip3 install --no-cache-dir pysam==0.22.0
+RUN pip3 install --no-cache-dir pysam==0.22.0 python-docx==1.2.0 openpyxl==3.1.5
 
 # minimap + (k8/paftools.js)
 #COPY --from=k8 /app/k8/k8 /usr/local/bin/
