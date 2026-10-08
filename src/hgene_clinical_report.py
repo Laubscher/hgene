@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Generate the final clinical interpretation DOCX from an hgene run.
 
-Missing or malformed clinical metadata are intentionally non-blocking: the
-corresponding placeholders are replaced with empty strings. Only an unusable
-Word template or an unwritable output file is fatal.
+Missing administrative metadata leave empty placeholders. CMV reference
+conflicts, unusable clinical templates and unwritable outputs are fatal.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ import os
 import re
 import sys
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable, Iterator, Mapping, Sequence
 
@@ -24,6 +23,11 @@ from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from openpyxl import load_workbook
+
+from hgene_protein import (
+    CMV_ACCESSION, CMVReference, Normalization, load_prepared_records,
+    normalize_variant_mutation,
+)
 
 
 PLACEHOLDER_RE = re.compile(r"_[A-Z0-9]+(?:-[A-Z0-9]+)*_")
@@ -77,6 +81,11 @@ class Variant:
     dna_report: str
     consequence: str
     af: float | None
+    aa_normalized: str = ""
+    normalization_status: str = ""
+    normalization_note: str = ""
+    normalization_kind: str = ""
+    hgvs_p: str = ""
 
 
 @dataclass(frozen=True)
@@ -84,6 +93,8 @@ class ResistanceMatch:
     variant: Variant
     drug: str
     mutation_type: str
+    record_index: int = -1
+    method: str = "legacy"
 
 
 @dataclass(frozen=True)
@@ -232,7 +243,7 @@ def normalize_gene(value: object) -> str:
 
 def report_aa_change(chrom: str, aa_change: str) -> str:
     aa_change = clean(aa_change)
-    if chrom not in {"UL89_1-HHV5", "UL89_3-HHV5"}:
+    if chrom != "UL89_1-HHV5":
         return aa_change
     match = re.fullmatch(r"(\d+)([A-Za-z*]+)>(\d+)([A-Za-z*]+)", aa_change)
     if not match:
@@ -244,7 +255,7 @@ def report_aa_change(chrom: str, aa_change: str) -> str:
 
 
 def report_dna_change(chrom: str, pos: int, ref: str, alt: str, raw: str) -> str:
-    if chrom in {"UL89_1-HHV5", "UL89_3-HHV5"}:
+    if chrom == "UL89_1-HHV5":
         return f"{pos + 888}{ref}>{alt}"
     return first_nonempty(raw, f"{pos}{ref}>{alt}")
 
@@ -293,7 +304,8 @@ def read_vcf(path: Path | None) -> tuple[list[Variant], dict[str, str], bool]:
                     warn(f"ignoring VCF line with invalid position: {pos_raw}")
                     continue
                 info = parse_info_field(fields[7])
-                af = parse_float(info.get("AF"))
+                alts = alt.split(",")
+                afs = info.get("AF", "").split(",")
                 bcsq_values = clean(info.get("BCSQ")).split(",")
                 for bcsq in bcsq_values:
                     if not bcsq or bcsq.startswith("@"):
@@ -306,21 +318,30 @@ def read_vcf(path: Path | None) -> tuple[list[Variant], dict[str, str], bool]:
                     gene_raw = parts[1]
                     aa_raw = parts[5]
                     dna_raw = parts[6]
+                    # Associate a BCSQ annotation with its own ALT/AF. Taking
+                    # ALT[0] for every annotation silently mislabels multiallelics.
+                    candidates = [i for i, allele in enumerate(alts)
+                                  if f"{pos}{ref}>{allele}" in dna_raw.split("+")]
+                    allele_index = candidates[0] if len(candidates) == 1 else (0 if len(alts) == 1 else None)
+                    allele = alts[allele_index] if allele_index is not None else ""
+                    af = parse_float(afs[allele_index]) if allele_index is not None and allele_index < len(afs) else None
                     variants.append(
                         Variant(
                             chrom=chrom,
                             pos=pos,
                             ref=ref,
-                            alt=alt.split(",", 1)[0],
+                            alt=allele,
                             gene=normalize_gene(gene_raw or chrom),
                             aa_raw=clean(aa_raw),
                             aa_report=report_aa_change(chrom, aa_raw),
                             dna_raw=clean(dna_raw),
                             dna_report=report_dna_change(
-                                chrom, pos, ref, alt.split(",", 1)[0], dna_raw
+                                chrom, pos, ref, allele, dna_raw
                             ),
                             consequence=clean(consequence),
                             af=af,
+                            normalization_status="" if allele_index is not None else "AMBIGUOUS_ALLELE",
+                            normalization_note="" if allele_index is not None else "BCSQ could not be assigned to one ALT",
                         )
                     )
     except (OSError, EOFError, UnicodeError) as exc:
@@ -351,13 +372,14 @@ def read_resistance_db(
         rows = sheet.iter_rows(values_only=True)
         headers = [normalize_header(value) for value in next(rows)]
         records: list[dict[str, str]] = []
-        for row in rows:
+        for row_number, row in enumerate(rows, start=2):
             record = {
                 header: clean(value)
                 for header, value in zip(headers, row)
                 if header
             }
             if any(record.get(key) for key in ("drug", "aa_chg_bcsq", "dna_chg_bcsq", "aa_change")):
+                record["source_row"] = str(row_number)
                 records.append(record)
 
         metadata: dict[str, str] = {}
@@ -425,13 +447,73 @@ def same_value(left: object, right: object) -> bool:
     return clean(left).casefold() == clean(right).casefold() and bool(clean(left))
 
 
+def normalize_cmv_inputs(
+    variants: Sequence[Variant], records: Sequence[Mapping[str, str]],
+    reference: CMVReference, metadata: dict[str, str],
+    database_metadata: Mapping[str, str] | None = None,
+) -> tuple[list[Variant], list[dict[str, str]]]:
+    """Normalize variants and load HGVS keys already prepared in the database."""
+    result_variants = []
+    reference_problem = reference.vcf_problem(metadata)
+    for variant in variants:
+        if not variant.chrom.endswith("-HHV5"):
+            result_variants.append(variant)
+            continue
+        if variant.normalization_status:
+            result_variants.append(variant)
+            continue
+        if reference_problem:
+            norm = Normalization(variant.aa_raw, status="REFERENCE_MISMATCH", note=reference_problem)
+        else:
+            norm = normalize_variant_mutation(variant.chrom, variant.gene, variant.pos,
+                                              variant.ref, variant.aa_raw, variant.consequence, reference)
+        result_variants.append(replace(
+            variant, aa_normalized=norm.normalized, hgvs_p=norm.hgvs_p, normalization_status=norm.status,
+            normalization_note=norm.note, normalization_kind=norm.kind))
+    return result_variants, load_prepared_records(records, database_metadata or {}, reference)
+
+
+def write_normalization_audit(path: Path, variants: Sequence[Variant],
+                              records: Sequence[Mapping[str, str]],
+                              matches: Sequence[ResistanceMatch], reference: CMVReference) -> None:
+    """One TSV containing source database columns, variant results and match provenance."""
+    rows = [dict(record, source="database", record_index=str(i)) for i, record in enumerate(records)]
+    for i, variant in enumerate(variants):
+        if not variant.normalization_status:
+            continue
+        rows.append(dict(source="variant", variant_index=str(i), chrom=variant.chrom,
+                         pos=str(variant.pos), ref=variant.ref, alt=variant.alt, gene=variant.gene,
+                         aa_raw=variant.aa_raw, dna_raw=variant.dna_raw,
+                         af="" if variant.af is None else str(variant.af),
+                         aa_normalized=variant.aa_normalized,
+                         hgvs_p=variant.hgvs_p,
+                         normalization_status=variant.normalization_status,
+                         normalization_note=variant.normalization_note,
+                         normalization_kind=variant.normalization_kind,
+                         normalization_reference=CMV_ACCESSION,
+                         normalization_fasta_sha256=reference.sha256))
+    for match in matches:
+        rows.append(dict(source="match", variant_index=str(variants.index(match.variant)),
+                         record_index=str(match.record_index), match_method=match.method,
+                         drug=match.drug, mutation_type=match.mutation_type))
+    columns = list(dict.fromkeys(["source", "record_index", "variant_index", "source_row"] +
+                                [key for row in rows for key in row]))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns, delimiter="\t")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def match_variants(
     variants: Sequence[Variant], records: Sequence[Mapping[str, str]]
 ) -> list[ResistanceMatch]:
     matches: list[ResistanceMatch] = []
     seen: set[tuple[Variant, str, str]] = set()
     for variant in variants:
-        for record in records:
+        for record_index, record in enumerate(records):
+            if variant.normalization_status == "AMBIGUOUS_ALLELE":
+                continue
             chrom_match = same_value(record.get("chrom"), variant.chrom)
             aa_match = chrom_match and same_value(record.get("aa_chg_bcsq"), variant.aa_raw)
             dna_match = chrom_match and same_value(record.get("dna_chg_bcsq"), variant.dna_raw)
@@ -439,7 +521,27 @@ def match_variants(
                 normalize_gene(record.get("gene")) == variant.gene
                 and same_value(record.get("aa_change"), variant.aa_report)
             )
-            if not (aa_match or dna_match or gene_match):
+            method = "legacy"
+            if variant.chrom.endswith("-HHV5"):
+                # Strict on the CMV path: a textual match must never bypass a
+                # rejected reference or an ambiguous current database entry.
+                if variant.normalization_status not in {"OK", "PARTIAL"}:
+                    continue
+                if record.get("normalization_status") not in {"OK", "PARTIAL"}:
+                    continue
+                if record.get("normalization_gene") != variant.gene:
+                    continue
+                canonical = (variant.normalization_status == record.get("normalization_status") == "OK"
+                             and bool(variant.hgvs_p) and variant.hgvs_p != "p.="
+                             and variant.hgvs_p == record.get("hgvs_p"))
+                # An incomplete frameshift is not a unique protein event.
+                # Retain only an exact, contig-specific DNA correspondence.
+                exact_dna = dna_match and (variant.normalization_status == "PARTIAL"
+                                          or record.get("normalization_status") == "PARTIAL")
+                if not (canonical or exact_dna):
+                    continue
+                method = "hgvs_protein" if canonical else "exact_dna"
+            elif not (aa_match or dna_match or gene_match):
                 continue
             mutation_type = clean(record.get("mutation_type"))
             for drug in parse_drugs(record.get("drug")):
@@ -451,6 +553,8 @@ def match_variants(
                             variant=variant,
                             drug=drug,
                             mutation_type=mutation_type,
+                            record_index=record_index,
+                            method=method,
                         )
                     )
     return matches
@@ -523,21 +627,25 @@ def mutation_interpretation_text(
 
 def format_protein_change(raw: str) -> str:
     raw = clean(raw)
-    match = re.fullmatch(r"(\d+)([A-Za-z*]+)>(\d+)([A-Za-z*]+)", raw)
+    match = re.fullmatch(r"(\d+)([A-Z*])>(\d+)([A-Z*])", raw)
     if match and match.group(1) == match.group(3):
         return f"p.{match.group(2)}{match.group(1)}{match.group(4)}"
-    match = re.fullmatch(r"(\d+)([A-Za-z*]+)>([A-Za-z*]+)", raw)
+    match = re.fullmatch(r"(\d+)([A-Z*])>([A-Z*])", raw)
     if match:
         return f"p.{match.group(2)}{match.group(1)}{match.group(3)}"
-    if re.fullmatch(r"[A-Za-z*]+\d+[A-Za-z*]+", raw):
+    if re.fullmatch(r"[A-Z*]\d+[A-Z*]", raw):
         return f"p.{raw}"
     return raw
 
 
 def format_mutation(variant: Variant, with_af: bool = False) -> str:
-    change = format_protein_change(variant.aa_report)
+    change = variant.aa_normalized or format_protein_change(variant.aa_report)
+    if variant.normalization_status and not variant.aa_normalized:
+        change = f"{variant.aa_raw} (notation à vérifier)" if variant.aa_raw else ""
     if not change:
         change = variant.dna_report
+    if "frameshift" in variant.consequence and "fs" not in change and variant.normalization_kind != "stop_gained":
+        change = f"{change} (frameshift)" if change else "frameshift"
     text = f"{variant.gene}: {change}" if change else variant.gene
     if with_af and variant.af is not None:
         percent = f"{100 * variant.af:.1f}".replace(".", ",")
@@ -717,6 +825,7 @@ def build_conclusion(
     vcf_ok: bool,
     db_ok: bool,
     coverage_ok: bool,
+    review_genes: Sequence[str] = (),
 ) -> str:
     if not vcf_ok or not db_ok:
         return ""
@@ -756,6 +865,7 @@ def build_conclusion(
         statuses = [coverage.get(gene) for gene in required_genes]
         coverage_complete = (
             coverage_ok
+            and not required_genes.intersection(review_genes)
             and all(status is not None for status in statuses)
             and all(not status.low100 for status in statuses if status is not None)
         )
@@ -893,6 +1003,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--vcf", type=Path)
     parser.add_argument("--coverage", type=Path)
     parser.add_argument("--resistance-db", type=Path)
+    parser.add_argument("--virus", choices=("HHV1", "HHV2", "HHV5"),
+                        help="virus context, including VCFs without any variants")
+    parser.add_argument("--reference-fasta", type=Path,
+                        default=Path(__file__).resolve().parent.parent / "db" / "HHV5.fasta",
+                        help="validated hgene AD169 CDS FASTA used for CMV normalization")
+    parser.add_argument("--normalization-audit", type=Path,
+                        help="audit TSV (default: output filename with .normalization.tsv suffix)")
     parser.add_argument("--sample-name", default="")
     parser.add_argument("--date-prelevement", default=os.getenv("HG_DATE_PRELEVEMENT", ""))
     parser.add_argument("--tube-id", default=os.getenv("HG_TUBE_ID", ""))
@@ -933,7 +1050,52 @@ def main(argv: Sequence[str] | None = None) -> int:
     variants, vcf_meta, vcf_ok = read_vcf(args.vcf)
     db_records, db_meta, db_ok = read_resistance_db(args.resistance_db)
     coverage, coverage_ok = read_coverage(args.coverage)
+    reference = None
+    review_genes: set[str] = set()
+    cmv = (args.virus == "HHV5" or any(v.chrom.endswith("-HHV5") for v in variants)
+           or db_meta.get("organism_scope") == "HHV5" or vcf_meta.get("hgene_ref_accession") == CMV_ACCESSION)
+    if cmv:
+        if not pairs:
+            print("ERROR: CMV clinical template has no _MUT-DRUG-GENE_/_INT-DRUG-GENE_ placeholders", file=sys.stderr)
+            return 2
+        try:
+            reference = CMVReference(args.reference_fasta)
+            if args.ref_accession and args.ref_accession != CMV_ACCESSION:
+                raise ValueError("--ref-accession conflicts with the AD169 normalization reference")
+            # An explicitly supplied accession can document an older VCF that
+            # lacks this metadata; it cannot override contradictory VCF metadata.
+            if not vcf_meta.get("hgene_ref_accession") and args.ref_accession:
+                vcf_meta["hgene_ref_accession"] = args.ref_accession
+            problem = reference.vcf_problem(vcf_meta)
+            if vcf_ok and problem:
+                raise ValueError(problem)
+            variants, db_records = normalize_cmv_inputs(variants, db_records, reference, vcf_meta, db_meta)
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"ERROR: cannot normalize CMV against AD169: {exc}", file=sys.stderr)
+            return 2
     matches = match_variants(variants, db_records) if db_ok else []
+    unmatched_frameshifts = [v for v in variants if "frameshift" in v.consequence
+                            and not any(m.variant == v for m in matches)]
+    if reference:
+        review_genes.update(v.gene for v in variants if v.chrom.endswith("-HHV5")
+                            and v.normalization_status not in {"OK", "PARTIAL"})
+        review_genes.update(clean(r.get("normalization_gene")) for r in db_records
+                            if r.get("normalization_status") not in {None, "OK", "PARTIAL"}
+                            and parse_drugs(r.get("drug")))
+        review_genes.update(v.gene for v in unmatched_frameshifts)
+        review_genes.discard("")
+        for gene in sorted(review_genes):
+            warn(f"{gene}: normalization/database or uncharacterized frameshift requires review; see audit TSV")
+        audit_path = args.normalization_audit or args.output.with_suffix(".normalization.tsv")
+        protected = [args.output, args.template, args.vcf, args.resistance_db, args.reference_fasta, args.coverage]
+        if audit_path.resolve() in {p.resolve() for p in protected if p}:
+            print("ERROR: normalization audit path would overwrite an input or the DOCX", file=sys.stderr)
+            return 2
+        try:
+            write_normalization_audit(audit_path, variants, db_records, matches, reference)
+        except OSError as exc:
+            print(f"ERROR: cannot write normalization audit: {exc}", file=sys.stderr)
+            return 2
     unexpected_mutation_types = sorted(
         {
             clean(match.mutation_type) or "<vide>"
@@ -995,11 +1157,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             mutation_interpretation_text(drug, group)
             for group in pair_match_groups
         )
+        # Unmatched frameshifts are visible for the gene without assigning an
+        # antiviral phenotype. Matched mutations retain the DB interpretation.
+        for variant in unmatched_frameshifts:
+            if variant.gene == gene:
+                mutation_text += ("\n" if mutation_text else "") + format_mutation(variant)
+                interpretation_text += "\n" if interpretation_text else ""
         pair_states = {
             mutation_aggregate_state(match.mutation_type)
             for match in raw_pair_matches
         }
         if pair_states.intersection({"indeterminate", "non_viable"}):
+            shade_marker_cells(doc, (mutation_marker, interpretation_marker), "FFF2CC")
+        if gene in review_genes:
             shade_marker_cells(doc, (mutation_marker, interpretation_marker), "FFF2CC")
 
         coverage_status = coverage.get(gene)
@@ -1032,7 +1202,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         vcf_ok=vcf_ok,
         db_ok=db_ok,
         coverage_ok=coverage_ok,
+        review_genes=review_genes,
     )
+    if review_genes:
+        generated_conclusion += ("\nInterprétation limitée : contrôle des annotations ou de la base requis pour "
+                                 + ", ".join(sorted(review_genes)) + " (voir le fichier de contrôle).")
     replacements["_CONCLUSIONSDELANALYSE_"] = first_nonempty(
         args.conclusion, generated_conclusion
     )
