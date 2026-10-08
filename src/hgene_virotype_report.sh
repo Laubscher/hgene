@@ -94,6 +94,11 @@ RESISTANCE_DB_SHA256="$(sha256sum "${RESISTANCE_DB_FILE}" | awk '{print $1}')"
 
 # template par défaut
 DB_TEMPLATE="${DEFAULT_DB_DIR}/template.docx"
+GENERATE_LEGACY_DOCX="TRUE"
+if [[ "$virus" == "HHV5" ]]; then
+  DB_TEMPLATE="${DEFAULT_DB_DIR}/template_interpretation.docx"
+  GENERATE_LEGACY_DOCX="FALSE"
+fi
 
 
 if [[ -n "${USER_TEMPLATE:-}" ]]; then
@@ -152,22 +157,39 @@ Rscript -e "rmarkdown::render(
     input_vcf_file='${VCF_SRC}',
     input_db_dir='${DB_DIR}',
     input_fasta='${VT_ROOT}/db/${virus}.fasta',
+    input_protein_normalizer='${SCRIPT_DIR}/hgene_protein.py',
     template_docx='${TEMPLATE_DOCX}',
     output_docx_report='${prefix}.vcf.gz.${DB_ID}.docx',
     input_coverage_tsv='${REPORT_DIR}/coverage_summary.tsv',
     input_analysis_number='${ANALYSIS_NUMBER}',
-    input_resistance_db_sha256='${RESISTANCE_DB_SHA256}'
+    input_resistance_db_sha256='${RESISTANCE_DB_SHA256}',
+    generate_docx=${GENERATE_LEGACY_DOCX}
   ),
   knit_root_dir='${REPORT_DIR}',
   output_dir='${REPORT_DIR}',
   output_file='${prefix}'
 )"
 
+if [[ "$virus" == "HHV5" ]]; then
+  step "Generating clinical CMV report with AD169 protein normalization"
+  python3 "${SCRIPT_DIR}/hgene_clinical_report.py" \
+    --virus HHV5 \
+    --vcf "$VCF_SRC" \
+    --coverage "${REPORT_DIR}/coverage_summary.tsv" \
+    --resistance-db "$RESISTANCE_DB_FILE" \
+    --reference-fasta "${VT_ROOT}/db/HHV5.fasta" \
+    --template "$TEMPLATE_DOCX" \
+    --output "${REPORT_DIR}/${prefix}.vcf.gz.${DB_ID}.docx" \
+    --sample-name "$prefix" \
+    --analysis-number "$ANALYSIS_NUMBER" \
+    --database-sha256 "$RESISTANCE_DB_SHA256"
+fi
+
 # Cleanup local copies
 rm -f "${REPORT_DIR}/bam_report.Rmd"
 rm -f "${REPORT_DIR}/vcf_report.Rmd"
 
-if [[ -f "${VT_ROOT}/${prefix}.vcf.gz.${DB_ID}.docx" ]]; then
+if [[ "$GENERATE_LEGACY_DOCX" == "TRUE" && -f "${VT_ROOT}/${prefix}.vcf.gz.${DB_ID}.docx" ]]; then
   mv -f "${VT_ROOT}/${prefix}.vcf.gz.${DB_ID}.docx" "${REPORT_DIR}/"
 fi
 
