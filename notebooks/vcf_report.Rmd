@@ -11,11 +11,13 @@ params:
   input_vcf_file: ""
   input_db_dir: ""
   input_fasta: ""
+  input_protein_normalizer: ""
   template_docx: ""
   output_docx_report: ""
   input_coverage_tsv: ""
   input_analysis_number: ""
   input_resistance_db_sha256: ""
+  generate_docx: true
 ---
 
 
@@ -215,33 +217,96 @@ mut <- bind_cols(mut, parse_BCSQ(mut$BCSQ)) |>
   ) |>
   arrange(CHROM)
 
-# Match BCSQ with mutations in resistance DB
-mut <- mut |>
-  left_join(
-    dplyr::select(db, CHROM, aa_chg_bcsq, drug_aa = drug, mutation_type_aa = mutation_type),
-    by = c("CHROM", "amino_acid_change" = "aa_chg_bcsq")
-  ) |>
-  left_join(
-    dplyr::select(db, CHROM, dna_chg_bcsq, drug_dna = drug, mutation_type_dna = mutation_type),
-    by = c("CHROM", "dna_change" = "dna_chg_bcsq")
-  ) |>
-  mutate(
-    drug = coalesce(drug_aa, drug_dna),
-    mutation_type = coalesce(mutation_type_aa, mutation_type_dna)
-  ) |>
-  dplyr::select(-drug_aa, -mutation_type_aa, -drug_dna, -mutation_type_dna)
-
-if ("gene" %in% colnames(db) && "aa_change" %in% colnames(db)) {
+# The database was prepared once with hgene_prepare_resistance_db.py.
+# R and Word call the same protein normalizer for detected variants.
+cmv <- isTRUE(ref_accession == "FJ527563.1") || any(endsWith(db$CHROM, "-HHV5"), na.rm = TRUE)
+if (cmv) {
+  normalizer <- params$input_protein_normalizer
+  if (!nzchar(normalizer) || !file.exists(normalizer)) {
+    stop("CMV matching requires input_protein_normalizer pointing to src/hgene_protein.py")
+  }
+  normalize_tables <- function(mut, db, meta) {
+    files <- setNames(replicate(5, tempfile(fileext = ".tsv")),
+                      c("variants", "database", "metadata", "out_variants", "out_database"))
+    on.exit(unlink(files), add = TRUE)
+    readr::write_tsv(mut, files[["variants"]], na = "")
+    readr::write_tsv(db, files[["database"]], na = "")
+    readr::write_tsv(meta, files[["metadata"]], na = "")
+    digest <- get_vcf_meta(params$input_vcf_file, "hgene_ref_fasta_sha256")
+    command <- c(shQuote(normalizer), "--fasta", shQuote(params$input_fasta),
+                 "--variants", shQuote(files[["variants"]]),
+                 "--database", shQuote(files[["database"]]),
+                 "--metadata", shQuote(files[["metadata"]]),
+                 "--output-variants", shQuote(files[["out_variants"]]),
+                 "--output-database", shQuote(files[["out_database"]]))
+    if (!is.na(ref_accession) && nzchar(ref_accession))
+      command <- c(command, "--vcf-reference", shQuote(ref_accession))
+    if (!is.na(digest) && nzchar(digest))
+      command <- c(command, "--vcf-fasta-sha256", shQuote(digest))
+    if (system2("python3", command) != 0L) stop("CMV HGVS normalization failed; see the Python error above")
+    read_result <- function(path) readr::read_tsv(path, col_types = cols(.default = col_character()),
+                                                na = character(), show_col_types = FALSE)
+    variant_keys <- read_result(files[["out_variants"]])
+    database_keys <- read_result(files[["out_database"]])
+    if (nrow(variant_keys) != nrow(mut) || nrow(database_keys) != nrow(db))
+      stop("HGVS table row count differs from its source")
+    list(mut = bind_cols(mut, variant_keys), db = bind_cols(db, database_keys))
+  }
+  # Excel can contain trailing blank rows. They are not resistance records.
+  db <- db |>
+    mutate(across(any_of(c("CHROM", "gene", "aa_chg_bcsq", "dna_chg_bcsq", "drug",
+                          "mutation_type", "hgvs_p", "hgvs_status", "hgvs_note")), as.character)) |>
+    filter(!is.na(aa_chg_bcsq) | !is.na(dna_chg_bcsq) | !is.na(drug))
+  normalized <- normalize_tables(mut, db, db_meta)
+  # Preserve the existing HTML display; HGVS keys are only used for matching.
+  mut <- normalized$mut
+  db <- normalized$db
+  protein_keys <- db |>
+    filter(normalization_status == "OK", !is.na(hgvs_p), hgvs_p != "", hgvs_p != "p.=") |>
+    select(normalization_gene, hgvs_p, drug_aa = drug, mutation_type_aa = mutation_type)
+  dna_keys <- db |>
+    filter(normalization_status %in% c("OK", "PARTIAL"), !is.na(dna_chg_bcsq), dna_chg_bcsq != "") |>
+    select(CHROM, dna_chg_bcsq, drug_dna = drug, mutation_type_dna = mutation_type,
+           database_dna_status = normalization_status)
+  mut <- mut |>
+    left_join(protein_keys, by = c("normalization_gene", "hgvs_p"), na_matches = "never") |>
+    left_join(dna_keys, by = c("CHROM", "dna_change" = "dna_chg_bcsq"), na_matches = "never") |>
+    mutate(
+      exact_dna = normalization_status %in% c("OK", "PARTIAL") &
+                  (normalization_status == "PARTIAL" | database_dna_status == "PARTIAL"),
+      drug = coalesce(drug_aa, if_else(coalesce(exact_dna, FALSE), drug_dna, NA_character_)),
+      mutation_type = coalesce(mutation_type_aa, if_else(coalesce(exact_dna, FALSE), mutation_type_dna, NA_character_))
+    ) |>
+    select(-drug_aa, -mutation_type_aa, -drug_dna, -mutation_type_dna, -database_dna_status, -exact_dna)
+} else {
+  # Match BCSQ with mutations in resistance DB
   mut <- mut |>
     left_join(
-      db |> dplyr::select(gene, aa_change, drug_gene = drug, mutation_type_gene = mutation_type),
-      by = c("gene_report" = "gene", "amino_acid_change_report" = "aa_change")
+      dplyr::select(db, CHROM, aa_chg_bcsq, drug_aa = drug, mutation_type_aa = mutation_type),
+      by = c("CHROM", "amino_acid_change" = "aa_chg_bcsq")
+    ) |>
+    left_join(
+      dplyr::select(db, CHROM, dna_chg_bcsq, drug_dna = drug, mutation_type_dna = mutation_type),
+      by = c("CHROM", "dna_change" = "dna_chg_bcsq")
     ) |>
     mutate(
-      drug = coalesce(drug, drug_gene),
-      mutation_type = coalesce(mutation_type, mutation_type_gene)
+      drug = coalesce(drug_aa, drug_dna),
+      mutation_type = coalesce(mutation_type_aa, mutation_type_dna)
     ) |>
-    dplyr::select(-drug_gene, -mutation_type_gene)
+    dplyr::select(-drug_aa, -mutation_type_aa, -drug_dna, -mutation_type_dna)
+
+  if ("gene" %in% colnames(db) && "aa_change" %in% colnames(db)) {
+    mut <- mut |>
+      left_join(
+        db |> dplyr::select(gene, aa_change, drug_gene = drug, mutation_type_gene = mutation_type),
+        by = c("gene_report" = "gene", "amino_acid_change_report" = "aa_change")
+      ) |>
+      mutate(
+        drug = coalesce(drug, drug_gene),
+        mutation_type = coalesce(mutation_type, mutation_type_gene)
+      ) |>
+      dplyr::select(-drug_gene, -mutation_type_gene)
+  }
 }
 
 mut <- mut |>
@@ -264,7 +329,7 @@ Cette section affiche la liste des mutations detéctées (contenu du fichier VCF
 et la confronte à la database de résistances connues.
 
 ```{r}
-MUT <- mut |> 
+MUT <- mut |>
   filter(str_starts(BCSQ,"@",negate = TRUE)) |>
   arrange(CHROM,POS)
 
@@ -305,12 +370,12 @@ Légende:
 ```{r}
 mut |>
   filter(str_starts(BCSQ,"@",negate = TRUE)) |>
-  ggplot() + 
+  ggplot() +
     facet_wrap(CHROM~.,scales = "free",ncol=1) +
     geom_jitter(aes(x=POS,y=consequence,size=AF,color=drug),alpha=0.5,width = 0,height=0.3) +
     #ggrepel::geom_label_repel(aes(x=start,y=consequence,label=DNA_CHANGE),size=2) +
     geom_segment(aes(y="_genome",yend=after_stat(y),x=1,xend=seqlengths),data=as.data.frame(seqinfo(fa)) |> rownames_to_column("CHROM")) +
-    scale_size_area(limits=c(0,1),labels=scales::percent) + 
+    scale_size_area(limits=c(0,1),labels=scales::percent) +
     xlab("Position sur la séquence de référence") + ylab("") +
     theme_bw() +
     theme(strip.text.y = element_text(angle=0)) +
@@ -339,7 +404,7 @@ kable_style(filemeta,caption="Informations extraites du nom de fichier et qui ap
 
 ```{r echo=FALSE}
 # Format the table that will appear in the report
-MUT <- mut |> 
+MUT <- mut |>
   filter(str_starts(BCSQ,"@",negate = TRUE)) |>
   filter(consequence != "synonymous") |>
   mutate(mutation = case_when(
@@ -366,9 +431,9 @@ kable_style(MUT,caption="Liste des mutations montrées dans le rapport clinique"
 
 ```{r echo=FALSE}
 # Extract conclusion of the report
-profils <- mut |> 
-  filter(!mutation_type %in% c("-",NA,""),!drug %in% c("-",NA,"")) |> 
-  group_by(mutation_type) |> 
+profils <- mut |>
+  filter(!mutation_type %in% c("-",NA,""),!drug %in% c("-",NA,"")) |>
+  group_by(mutation_type) |>
   distinct(drug) |>
   summarise(Antiviral=str_flatten_comma(drug))
 
@@ -385,7 +450,7 @@ print(concluding_sentence)
 ```
 
 
-```{r include=FALSE}
+```{r include=FALSE, eval=params$generate_docx}
 # Generation du rapport clinique à partir du template WORD
 library(officer)
 docx_template <- params$template_docx
@@ -467,4 +532,3 @@ if (!is.null(params$output_docx_report) && (params$output_docx_report!="")) {
   print(doc,target=params$output_docx_report)
 }
 ```
-
