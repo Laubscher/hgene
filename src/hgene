@@ -3,6 +3,11 @@
 # Part of: hgene pipeline
 # SPDX-License-Identifier: MIT
 
+if [[ "${1:-}" == "--version" ]]; then
+    cat /usr/local/share/hgene/VERSION
+    exit 0
+fi
+
 set -euo pipefail
 IFS=$'\n\t'
 
@@ -12,13 +17,17 @@ usage() {
   cat >&2 <<'USAGE'
 Usage:
   hgene -v <virus> [-c <cpu>] [-r <resistance_db_root>] <prefix|prefix.fastq>
-
+  
+  hgene --version
+  
 Arguments:
   -v <virus>       Virus reference key (e.g. HHV1, HHV2, HHV5)
   -c <cpu>         Threads (default: nproc)
   -r <path>        Root directory containing external resistance DB folders
   <input>          Prefix or a .fastq file (uncompressed)
-
+  
+  --version        Show hgene version and exit
+  
 Notes:
   - .fq is not supported
   - .gz is not supported
