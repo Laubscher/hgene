@@ -1,6 +1,6 @@
 # hgene
 
-**Version:** 1.1.0
+**Version:** 1.2.0
 
 hgene performs small-variant analysis (SNPs, MNVs and indels) in herpesvirus resistance genes, applies homopolymer-aware filtering, reconstructs codon-level amino-acid consequences using read-level linkage, and reports variant co-occurrence evidence.  
 
@@ -127,7 +127,7 @@ _In french_
 
 ## Custom report template
 
-Users can provide a custom `template.docx` by placing it in `$HOME/template/hsv-1/` or `$HOME/template/hsv-2/`. If detected, it will automatically be used for report generation. If no template is found, the default built-in template is used.
+Users can provide a custom `template.docx` by placing it in `$HOME/template/hsv-1/` , `$HOME/template/hsv-2/` or `$HOME/template/cmv/`. If detected, it will automatically be used for report generation. If no template is found, the default built-in template is used.
 
 ---
 
