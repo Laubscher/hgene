@@ -102,6 +102,15 @@ case "$virus" in
   *) CANDIDATE="" ;;
 esac
 
+# Keep existing server installations using template.docx compatible. The
+# Python generator checks that it contains clinical interpretation markers.
+if [[ -n "$CANDIDATE" && ! -s "$CANDIDATE" ]]; then
+  LEGACY_CANDIDATE="${CANDIDATE%/*}/template.docx"
+  if [[ -s "$LEGACY_CANDIDATE" ]]; then
+    CANDIDATE="$LEGACY_CANDIDATE"
+  fi
+fi
+
 if [[ -n "$CANDIDATE" && -s "$CANDIDATE" ]]; then
   HG_TEMPLATE_DOCX="$CANDIDATE"
   info "User template detected: $HG_TEMPLATE_DOCX"

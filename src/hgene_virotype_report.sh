@@ -92,13 +92,10 @@ fi
 RESISTANCE_DB_FILE="${DB_DIR}/resistances.xlsx"
 RESISTANCE_DB_SHA256="$(sha256sum "${RESISTANCE_DB_FILE}" | awk '{print $1}')"
 
-# template par défaut
-DB_TEMPLATE="${DEFAULT_DB_DIR}/template.docx"
-GENERATE_LEGACY_DOCX="TRUE"
-if [[ "$virus" == "HHV5" ]]; then
-  DB_TEMPLATE="${DEFAULT_DB_DIR}/template_interpretation.docx"
-  GENERATE_LEGACY_DOCX="FALSE"
-fi
+# The clinical interpretation report replaces the legacy DOCX for all three
+# supported viruses. The two HTML reports keep their existing rendering path.
+DB_TEMPLATE="${DEFAULT_DB_DIR}/template_interpretation.docx"
+GENERATE_LEGACY_DOCX="FALSE"
 
 
 if [[ -n "${USER_TEMPLATE:-}" ]]; then
@@ -170,20 +167,18 @@ Rscript -e "rmarkdown::render(
   output_file='${prefix}'
 )"
 
-if [[ "$virus" == "HHV5" ]]; then
-  step "Generating clinical CMV report with AD169 protein normalization"
-  python3 "${SCRIPT_DIR}/hgene_clinical_report.py" \
-    --virus HHV5 \
-    --vcf "$VCF_SRC" \
-    --coverage "${REPORT_DIR}/coverage_summary.tsv" \
-    --resistance-db "$RESISTANCE_DB_FILE" \
-    --reference-fasta "${VT_ROOT}/db/HHV5.fasta" \
-    --template "$TEMPLATE_DOCX" \
-    --output "${REPORT_DIR}/${prefix}.vcf.gz.${DB_ID}.docx" \
-    --sample-name "$prefix" \
-    --analysis-number "$ANALYSIS_NUMBER" \
-    --database-sha256 "$RESISTANCE_DB_SHA256"
-fi
+step "Generating clinical interpretation report for ${virus}"
+python3 "${SCRIPT_DIR}/hgene_clinical_report.py" \
+  --virus "$virus" \
+  --vcf "$VCF_SRC" \
+  --coverage "${REPORT_DIR}/coverage_summary.tsv" \
+  --resistance-db "$RESISTANCE_DB_FILE" \
+  --reference-fasta "${VT_ROOT}/db/${virus}.fasta" \
+  --template "$TEMPLATE_DOCX" \
+  --output "${REPORT_DIR}/${prefix}.vcf.gz.${DB_ID}.docx" \
+  --sample-name "$prefix" \
+  --analysis-number "$ANALYSIS_NUMBER" \
+  --database-sha256 "$RESISTANCE_DB_SHA256"
 
 # Cleanup local copies
 rm -f "${REPORT_DIR}/bam_report.Rmd"

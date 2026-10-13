@@ -105,6 +105,7 @@ class MutationTypeInfo:
     table_qualifier: str = ""
     aggregate_qualifier: str = ""
     recognized: bool = True
+    magnitude_unknown: bool = False
 
 
 MUTATION_TYPE_RULES: Mapping[str, MutationTypeInfo] = {
@@ -129,6 +130,16 @@ MUTATION_TYPE_RULES: Mapping[str, MutationTypeInfo] = {
         3,
         table_qualifier="haut niveau",
         aggregate_qualifier="haut niveau",
+    ),
+    "Resistant, magnitude unknown": MutationTypeInfo(
+        "resistant",
+        0,
+        table_qualifier="niveau indéterminé",
+        aggregate_qualifier="niveau indéterminé",
+        magnitude_unknown=True,
+    ),
+    "Phenotypic result, unclassified": MutationTypeInfo(
+        "indeterminate", 0, table_qualifier="résultat phénotypique non classé"
     ),
     "Non-viable": MutationTypeInfo("non_viable", 0),
     "Possible hypersensitivity, no resistance": MutationTypeInfo(
@@ -364,10 +375,14 @@ def read_resistance_db(
         return [], {}, False
     try:
         workbook = load_workbook(path, read_only=True, data_only=True)
-        data_sheet_name = next(
-            (name for name in workbook.sheetnames if name.casefold() != "metadata"),
-            workbook.sheetnames[0],
-        )
+        sheets = {name.casefold(): name for name in workbook.sheetnames}
+        data_sheet_name = sheets.get("resistances.remap") or sheets.get("resistances")
+        if data_sheet_name is None:
+            data_sheet_name = next(
+                (name for name in workbook.sheetnames
+                 if name.casefold() not in {"metadata", "source", "review"}),
+                workbook.sheetnames[0],
+            )
         sheet = workbook[data_sheet_name]
         rows = sheet.iter_rows(values_only=True)
         headers = [normalize_header(value) for value in next(rows)]
@@ -561,7 +576,7 @@ def match_variants(
 
 
 def mutation_type_info(value: str) -> MutationTypeInfo:
-    """Interpret only the exact mutation_type values validated for CHARMD."""
+    """Interpret explicit CHARMD and converted HerpesDRG mutation_type values."""
     return MUTATION_TYPE_RULES.get(
         clean(value),
         MutationTypeInfo("indeterminate", 0, recognized=False),
@@ -584,7 +599,7 @@ def aggregate_mutation_types(
         "indeterminate": 3,
         "resistant": 4,
     }
-    return max(
+    result = max(
         infos,
         key=lambda info: (
             state_priority.get(info.aggregate_state, 0),
@@ -592,6 +607,17 @@ def aggregate_mutation_types(
             bool(info.aggregate_qualifier),
         ),
     )
+    # A quantified resistance and a resistance with no reported magnitude can
+    # coexist. Keep both qualifications rather than silently losing the latter.
+    if (result.aggregate_state == "resistant" and not result.magnitude_unknown
+            and any(info.magnitude_unknown for info in infos)):
+        note = "niveau indéterminé également rapporté"
+        result = replace(
+            result,
+            table_qualifier=" ; ".join(filter(None, (result.table_qualifier, note))),
+            aggregate_qualifier=" ; ".join(filter(None, (result.aggregate_qualifier, note))),
+        )
+    return result
 
 
 def mutation_interpretation_text(
@@ -1046,6 +1072,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     markers = discover_placeholders(doc)
     pairs = resistance_pairs(markers)
+    if not pairs:
+        print("ERROR: clinical template has no _MUT-DRUG-GENE_/_INT-DRUG-GENE_ placeholders; "
+              "use template_interpretation.docx", file=sys.stderr)
+        return 2
 
     variants, vcf_meta, vcf_ok = read_vcf(args.vcf)
     db_records, db_meta, db_ok = read_resistance_db(args.resistance_db)
@@ -1055,9 +1085,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     cmv = (args.virus == "HHV5" or any(v.chrom.endswith("-HHV5") for v in variants)
            or db_meta.get("organism_scope") == "HHV5" or vcf_meta.get("hgene_ref_accession") == CMV_ACCESSION)
     if cmv:
-        if not pairs:
-            print("ERROR: CMV clinical template has no _MUT-DRUG-GENE_/_INT-DRUG-GENE_ placeholders", file=sys.stderr)
-            return 2
         try:
             reference = CMVReference(args.reference_fasta)
             if args.ref_accession and args.ref_accession != CMV_ACCESSION:
@@ -1076,13 +1103,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     matches = match_variants(variants, db_records) if db_ok else []
     unmatched_frameshifts = [v for v in variants if "frameshift" in v.consequence
                             and not any(m.variant == v for m in matches)]
+    # If a frameshift has no match in the database, do not conclude susceptibility,
+    # even when the gene has enough coverage.
+    review_genes.update(v.gene for v in unmatched_frameshifts)
+    for gene in sorted(review_genes):
+        warn(f"{gene}: uncharacterized frameshift requires review")
     if reference:
         review_genes.update(v.gene for v in variants if v.chrom.endswith("-HHV5")
                             and v.normalization_status not in {"OK", "PARTIAL"})
         review_genes.update(clean(r.get("normalization_gene")) for r in db_records
                             if r.get("normalization_status") not in {None, "OK", "PARTIAL"}
                             and parse_drugs(r.get("drug")))
-        review_genes.update(v.gene for v in unmatched_frameshifts)
         review_genes.discard("")
         for gene in sorted(review_genes):
             warn(f"{gene}: normalization/database or uncharacterized frameshift requires review; see audit TSV")
@@ -1206,7 +1237,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if review_genes:
         generated_conclusion += ("\nInterprétation limitée : contrôle des annotations ou de la base requis pour "
-                                 + ", ".join(sorted(review_genes)) + " (voir le fichier de contrôle).")
+                                 + ", ".join(sorted(review_genes))
+                                 + (" (voir le fichier de contrôle)." if reference else "."))
     replacements["_CONCLUSIONSDELANALYSE_"] = first_nonempty(
         args.conclusion, generated_conclusion
     )
