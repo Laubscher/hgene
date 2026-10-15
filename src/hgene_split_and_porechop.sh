@@ -33,8 +33,12 @@ fi
 
 tmpdir="${TMPDIR:-.}/hgene_porechop_parallel_$$"
 mkdir -p "$tmpdir/chunks" "$tmpdir/trimmed"
+output_tmp=""
 
 cleanup() {
+    if [ -n "$output_tmp" ]; then
+        rm -f -- "$output_tmp"
+    fi
     rm -rf "$tmpdir"
 }
 trap cleanup EXIT
@@ -63,11 +67,19 @@ fi
 
 split -d -l "$lines_per_chunk" --additional-suffix=.fastq "$input_fastq" "$tmpdir/chunks/chunk_"
 
+pids=()
+chunk_names=()
+trimmed_files=()
+
 for chunk in "$tmpdir"/chunks/*.fastq; do
     chunk_name=$(basename "$chunk" .fastq)
+    trimmed_file="$tmpdir/trimmed/${chunk_name}_tr.fastq"
     (
-        porechop -i "$chunk" -o "$tmpdir/trimmed/${chunk_name}_tr.fastq" --discard_middle >/dev/null
+        porechop -i "$chunk" -o "$trimmed_file" --discard_middle >/dev/null
     ) &
+    pids+=("$!")
+    chunk_names+=("$chunk_name")
+    trimmed_files+=("$trimmed_file")
 
     # Limit concurrent jobs to $cpu.
     while [ "$(jobs -rp | wc -l)" -ge "$cpu" ]; do
@@ -75,8 +87,32 @@ for chunk in "$tmpdir"/chunks/*.fastq; do
     done
 done
 
-wait
+# Check every process: a bare `wait` does not report individual failures.
+# Wait for all workers before cleanup, including when one has failed.
+failed=0
+for i in "${!pids[@]}"; do
+    if wait "${pids[$i]}"; then
+        # An empty output is valid when Porechop discards every read in a chunk.
+        if [ ! -f "${trimmed_files[$i]}" ]; then
+            echo "ERROR: porechop produced no output file for ${chunk_names[$i]}" >&2
+            failed=1
+        fi
+    else
+        status=$?
+        echo "ERROR: porechop failed for ${chunk_names[$i]} (exit $status)" >&2
+        failed=1
+    fi
+done
 
-cat "$tmpdir"/trimmed/chunk_*_tr.fastq > "$output_fastq"
+if [ "$failed" -ne 0 ]; then
+    echo "ERROR: Porechop failed; output FASTQ was not replaced" >&2
+    exit 1
+fi
+
+# Publish the combined FASTQ only after every chunk and concatenation succeed.
+output_tmp=$(mktemp "${output_fastq}.tmp.XXXXXX")
+cat -- "${trimmed_files[@]}" > "$output_tmp"
+mv -f -- "$output_tmp" "$output_fastq"
+output_tmp=""
 
 echo "[hgene] Porechop output written to: $output_fastq" >&2
