@@ -271,3 +271,11 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+/.idea/.gitignore
+/.idea/hgene.iml
+/bin/lofreq
+/bin/lofreq2_call_pparallel.py
+/bin/lofreq2_somatic.py
+/.idea/modules.xml
+/.idea/inspectionProfiles/profiles_settings.xml
+/.idea/vcs.xml
