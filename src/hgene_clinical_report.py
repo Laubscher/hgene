@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Generate the final clinical interpretation DOCX from an hgene run.
-
-Missing administrative metadata leave empty placeholders. CMV reference
-conflicts, unusable clinical templates and unwritable outputs are fatal.
+"""
+Generate the final clinical interpretation DOCX from an hgene run.
+Missing administrative metadata leave empty placeholders.
+CMV reference conflicts, unusable clinical templates and unwritable outputs are fatal.
 """
 
 from __future__ import annotations
@@ -679,6 +679,40 @@ def format_mutation(variant: Variant, with_af: bool = False) -> str:
     return text
 
 
+def write_clinical_variants_tsv(
+    path: Path, variants: Sequence[Variant], matches: Sequence[ResistanceMatch]
+) -> None:
+    """Export matched variants and all frameshifts once, independently of drug."""
+    matched_variants = {match.variant for match in matches}
+    selected = {
+        variant for variant in variants
+        if variant in matched_variants or "frameshift" in variant.consequence
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle, delimiter="\t",
+            fieldnames=("gene", "chrom", "pos", "ref", "alt", "dna_change",
+                        "mutation", "consequence", "allele_freq"),
+        )
+        writer.writeheader()
+        for variant in sorted(selected, key=lambda v: (
+            v.gene, v.chrom, v.pos, v.ref, v.alt, v.dna_raw, v.aa_raw,
+            v.consequence, -1 if v.af is None else v.af,
+        )):
+            writer.writerow({
+                "gene": variant.gene,
+                "chrom": variant.chrom,
+                "pos": variant.pos,
+                "ref": variant.ref,
+                "alt": variant.alt,
+                "dna_change": variant.dna_report,
+                "mutation": format_mutation(variant).removeprefix(f"{variant.gene}: "),
+                "consequence": variant.consequence,
+                "allele_freq": "" if variant.af is None else variant.af,
+            })
+
+
 def drug_preposition(code: str) -> str:
     return DRUG_PREPOSITIONS.get(code, f"au {DRUG_LABELS.get(code, code.lower())}")
 
@@ -1026,6 +1060,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--template", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--clinical-variants-tsv", type=Path,
+                        help="export matched variants and all frameshifts for the HTML report")
     parser.add_argument("--vcf", type=Path)
     parser.add_argument("--coverage", type=Path)
     parser.add_argument("--resistance-db", type=Path)
@@ -1060,6 +1096,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.clinical_variants_tsv:
+        protected = (args.output, args.template, args.vcf, args.resistance_db,
+                     args.reference_fasta, args.coverage,
+                     args.normalization_audit or args.output.with_suffix(".normalization.tsv"))
+        if args.clinical_variants_tsv.resolve() in {p.resolve() for p in protected if p}:
+            print("ERROR: clinical variants TSV would overwrite an input or another output", file=sys.stderr)
+            return 2
     if not args.template.is_file():
         print(f"ERROR: Word template not found: {args.template}", file=sys.stderr)
         return 2
@@ -1080,6 +1123,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     variants, vcf_meta, vcf_ok = read_vcf(args.vcf)
     db_records, db_meta, db_ok = read_resistance_db(args.resistance_db)
     coverage, coverage_ok = read_coverage(args.coverage)
+    if args.clinical_variants_tsv and not (vcf_ok and db_ok):
+        print("ERROR: clinical variants TSV requires a readable VCF and resistance database", file=sys.stderr)
+        return 2
     reference = None
     review_genes: set[str] = set()
     cmv = (args.virus == "HHV5" or any(v.chrom.endswith("-HHV5") for v in variants)
@@ -1251,6 +1297,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception as exc:
         print(f"ERROR: cannot write clinical report {args.output}: {exc}", file=sys.stderr)
         return 2
+
+    if args.clinical_variants_tsv:
+        try:
+            write_clinical_variants_tsv(args.clinical_variants_tsv, variants, matches)
+        except OSError as exc:
+            print(f"ERROR: cannot write clinical variants TSV: {exc}", file=sys.stderr)
+            return 2
 
     print(f"Clinical report written to {args.output}")
     return 0

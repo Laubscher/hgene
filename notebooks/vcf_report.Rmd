@@ -17,7 +17,7 @@ params:
   input_coverage_tsv: ""
   input_analysis_number: ""
   input_resistance_db_sha256: ""
-  generate_docx: true
+  input_clinical_variants_tsv: ""
 ---
 
 
@@ -383,152 +383,84 @@ mut |>
 ```
 
 
-# Génération du rapport clinique
+# Mutations protéiques
 
+Cette section conserve le détail des mutations modifiant la protéine, y compris
+celles sans association à un antiviral dans la base.
 
-```{r echo=FALSE}
-# Parse filename to extract meta-informations that will be display in the report
-filepat <- "^([^_]+)_([^_]+)_([^_]+)_([^_]+)_([^\\.]+)(\\..*)"
-filemeta <- tibble(
-  filename = basename(params$input_vcf_file),
-  run_id = str_extract(filename,filepat,group = 1),
-  run_date = ymd(str_extract(filename,filepat,group = 2)),
-  tube_id = str_extract(filename,filepat,group = 3),
-  virus = str_extract(filename,filepat,group = 4),
-  initials_patient = str_extract(filename,filepat,group = 5),
-  extension = str_extract(filename,filepat,group = 6),
-)
-kable_style(filemeta,caption="Informations extraites du nom de fichier et qui apparaissent dans le rapport clinique")
-```
-
-
-```{r echo=FALSE}
-# Format the table that will appear in the report
-MUT <- mut |>
-  filter(str_starts(BCSQ,"@",negate = TRUE)) |>
-  filter(consequence != "synonymous") |>
-  mutate(mutation = case_when(
-    is.na(amino_acid_change_report) ~ str_trunc(str_to_lower(dna_change_report),20),
-    TRUE ~ amino_acid_change_report
-  )) |>
-  mutate(mutation = sprintf("%s (%.1f%%)",mutation,100*AF)) |>
-  mutate(mutation_type = replace_na(mutation_type,"")) |>
-  mutate(mutation_type = str_replace(mutation_type,"^[\\s]*$","Non-caractérisée")) |>
-  arrange(gene_report, POS) |>
-  dplyr::select(
-    gene = gene_report,
-    Antiviral = drug,
-    "Mutation (% échantillon portant la mutation)" = mutation,
-    "Type de mutation" = mutation_type
+```{r protein-mutations, results='asis'}
+protein_mutations <- mut |>
+  filter(
+    str_starts(BCSQ, "@", negate = TRUE),
+    consequence != "synonymous",
+    (!is.na(amino_acid_change_report) & nzchar(amino_acid_change_report)) |
+      str_detect(consequence, "frameshift|inframe|stop_gained|stop_lost|start_lost")
   ) |>
-  distinct()
+  distinct(CHROM, POS, REF, ALT, gene_report, dna_change_report,
+           amino_acid_change_report, consequence, DP, AF) |>
+  arrange(gene_report, POS) |>
+  transmute(
+    Gène = gene_report,
+    Mutation = coalesce(na_if(amino_acid_change_report, ""), dna_change_report),
+    Conséquence = consequence,
+    Profondeur = DP,
+    `Fréquence allélique` = if_else(is.na(AF), "—", sprintf("%.1f%%", 100 * AF))
+  )
 
-kable_style(MUT,caption="Liste des mutations montrées dans le rapport clinique")
+if (nrow(protein_mutations) == 0) {
+  cat("Aucune mutation protéique détectée.\n\n")
+} else {
+  print(kable_style(protein_mutations, escape = TRUE,
+                    caption = "Mutations protéiques détectées, par gène"))
+}
 ```
 
+# Mutations retenues pour le rapport clinique
 
+Cette section présente, par gène, les mutations associées à au moins un antiviral
+dans la base et tous les frameshifts.
 
+Une association dans la base ne signifie pas nécessairement une résistance.
 
-```{r echo=FALSE}
-# Extract conclusion of the report
-profils <- mut |>
-  filter(!mutation_type %in% c("-",NA,""),!drug %in% c("-",NA,"")) |>
-  group_by(mutation_type) |>
-  distinct(drug) |>
-  summarise(Antiviral=str_flatten_comma(drug))
+Les frameshifts sans correspondance dans la base sont affichés sans attribution
+d'un phénotype de résistance. 
+L'interprétation par antiviral et les limites liées à la couverture figurent dans 
+le rapport clinique Word.
 
-Rprofil <- filter(profils,str_starts(mutation_type,"R")) |> pull()
-Sprofil <- filter(profils,str_starts(mutation_type,"S")) |> pull()
-
-concluding_sentence <- ""
-if (!is_empty(Rprofil) && !is_empty(Sprofil)) concluding_sentence <- str_glue("Le virus est probablement résistant à: {Rprofil}; et suceptible à: {Sprofil}.")
-if (!is_empty(Rprofil) && is_empty(Sprofil)) concluding_sentence <- str_glue("Le virus est probablement résistant à: {Rprofil}.")
-if (is_empty(Rprofil) && !is_empty(Sprofil)) concluding_sentence <- str_glue("Le virus est probablement suceptible à: {Sprofil}.")
-if (is_empty(Rprofil) && is_empty(Sprofil)) concluding_sentence <- str_glue("Aucun profil de résistance reconnu.")
-
-print(concluding_sentence)
-```
-
-
-```{r include=FALSE, eval=params$generate_docx}
-# Generation du rapport clinique à partir du template WORD
-library(officer)
-docx_template <- params$template_docx
-if (is.null(docx_template) || docx_template == "" || !file.exists(docx_template)) {
-  docx_template <- file.path(params$input_db_dir, "template.docx")
+```{r clinical-mutations, results='asis'}
+clinical_path <- params$input_clinical_variants_tsv
+if (is.null(clinical_path) || !nzchar(clinical_path) || !file.exists(clinical_path)) {
+  stop("Missing clinical variants TSV: generate it with hgene_clinical_report.py --clinical-variants-tsv before rendering the HTML")
 }
-
-doc <- read_docx(docx_template) |>
-  body_replace_all_text("SEQDATE",format(filemeta$run_date,"%Y-%m-%d"),fixed = TRUE) |>
-  body_replace_all_text("IDTUBE",filemeta$tube_id,fixed = TRUE) |>
-  body_replace_all_text("IDPATIENT",filemeta$initials_patient,fixed = TRUE) |>
-  body_replace_all_text("_ACCESSIONNUMBER_",ref_accession, fixed = TRUE) |>
-  body_replace_all_text("_VERSIONLOGICIEL_",hgene_version, fixed = TRUE) |>
-  body_replace_all_text("_EMPREINTE_",container_sha256, fixed = TRUE) |>
-  body_replace_all_text("_DATABASE_", db_name, fixed = TRUE) |>
-  body_replace_all_text("_ANALYSISNUMBER_", params$input_analysis_number, fixed = TRUE) |>
-  body_replace_all_text("_DBEMPREINTE_", params$input_resistance_db_sha256, fixed = TRUE)
-
-doc <- body_replace_all_text(doc,"CONCLUSIONSDELANALYSE",concluding_sentence, fixed = TRUE)
-
-report_levels <- seqlevels(fa) |>
-  as.character() |>
-  (\(x) ifelse(x %in% c("UL89_1-HHV5", "UL89_3-HHV5"), "UL89-HHV5", x))() |>
-  unique()
-
-MUT <- split(MUT, factor(MUT$gene, levels = report_levels))
-
-for(i in names(MUT)) {
-  marker <- paste0("RES-", i)
-
-  doc <- doc |>
-    cursor_reach(marker) |>
-    body_replace_all_text(marker, "", fixed = TRUE, only_at_cursor = TRUE)
-
-  low100 <- FALSE
-  low20 <- FALSE
-  if (!is.null(coverage) && nrow(coverage) > 0 && i %in% coverage$gene) {
-    row <- coverage |> filter(gene == i)
-    if (nrow(row) > 0) {
-      low100 <- isTRUE(row$low_coverage_100x[[1]])
-      low20 <- isTRUE(row$low_coverage_20x[[1]])
-    }
-  }
-
-  if (low20) {
-    doc <- doc |>
-      body_add_fpar(
-        value = fpar(
-          ftext(
-            "La couverture du gène est partiellement ou totalement inférieure à 20x.",
-            prop = fp_text(italic = TRUE)
-          )
-        ),
-        style = "Normal"
-      )
-  } else if (low100) {
-    doc <- doc |>
-      body_add_fpar(
-        value = fpar(
-          ftext(
-            "La couverture du gène est partiellement ou totalement inférieure à 100x.",
-            prop = fp_text(italic = TRUE)
-          )
-        ),
-        style = "Normal"
-      )
-  }
-
-  if (nrow(MUT[[i]]) > 0) {
-    doc <- doc |>
-      body_add_table(select(MUT[[i]], !gene), style = "StyleTableauRes")
-  } else {
-    doc <- doc |>
-      body_add_par("Aucune mutation détectée.", style = "Normal")
-  }
+clinical_mutations <- readr::read_tsv(
+  clinical_path,
+  col_types = cols(.default = col_character(), pos = col_double(), allele_freq = col_double()),
+  show_col_types = FALSE
+)
+required_columns <- c("gene", "chrom", "pos", "ref", "alt", "dna_change",
+                      "mutation", "consequence", "allele_freq")
+if (!all(required_columns %in% names(clinical_mutations)) ||
+    nrow(readr::problems(clinical_mutations)) > 0) {
+  stop("Invalid clinical variants TSV")
 }
+clinical_mutations <- clinical_mutations |>
+  arrange(gene, chrom, pos, ref, alt)
 
-if (!is.null(params$output_docx_report) && (params$output_docx_report!="")) {
-  print(doc,target=params$output_docx_report)
+if (nrow(clinical_mutations) == 0) {
+  cat("Aucune mutation associée à un antiviral ni aucun frameshift détecté.\n\n")
+} else {
+  for (current_gene in unique(clinical_mutations$gene)) {
+    cat("\n\n## ", htmltools::htmlEscape(current_gene), "\n\n", sep = "")
+    gene_mutations <- clinical_mutations |>
+      filter(gene == current_gene) |>
+      transmute(
+        Mutation = mutation,
+        Conséquence = consequence,
+        `Fréquence allélique` = if_else(is.na(allele_freq), "—",
+                                       sprintf("%.1f%%", 100 * allele_freq))
+      )
+    print(kable_style(gene_mutations, escape = TRUE))
+    cat("\n\n")
+  }
 }
 ```
