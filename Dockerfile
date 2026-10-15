@@ -134,7 +134,7 @@ COPY --chmod=755 db/* /usr/local/db/
 COPY --chmod=755 notebooks/* /usr/local/notebooks/
 COPY data/db/ /usr/local/data/db/
 COPY LICENSE /usr/local/share/licenses/hgene/LICENSE
-COPY VERSION /usr/local/share/hgene/VERSION
+
    
 ENV PATH="/usr/local/bin:${PATH}"
 
