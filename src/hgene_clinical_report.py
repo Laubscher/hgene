@@ -67,6 +67,13 @@ DRUG_PREPOSITIONS = {
 
 DRUG_ORDER = ("GCV", "CDV", "FOS", "MBV", "LMV", "ACV", "VACV", "PCV", "FCV", "BVDU")
 
+EMPTY_RESISTANCE_DB_REQUIRED_COLUMNS = frozenset({
+    "chrom", "gene", "aa_chg_bcsq", "dna_chg_bcsq", "drug", "mutation_type",
+    "ec50_ratio", "reference", "aa_chg_bcsq_original", "aa_ref_check_status",
+    "aa_ref_check_note", "fasta_record_key", "aa_position_offset",
+    "hgvs_p", "hgvs_status", "hgvs_note",
+})
+
 
 @dataclass(frozen=True)
 class Variant:
@@ -409,10 +416,19 @@ def read_resistance_db(
         warn(f"cannot read resistance database {path}: {exc}")
         return [], {}, False
 
-    usable = bool(records)
-    if not usable:
-        warn(f"no usable resistance records found in {path}")
-    return records, metadata, usable
+    if records:
+        return records, metadata, True
+
+    missing = sorted(EMPTY_RESISTANCE_DB_REQUIRED_COLUMNS.difference(headers))
+    if missing:
+        warn(
+            "empty resistance database is missing required columns "
+            f"({', '.join(missing)}): {path}"
+        )
+        return [], metadata, False
+
+    warn(f"resistance database is empty; continuing without resistance matches: {path}")
+    return [], metadata, True
 
 
 def parse_bool(value: object) -> bool:
@@ -883,11 +899,11 @@ def build_conclusion(
     matches: Sequence[ResistanceMatch],
     coverage: Mapping[str, CoverageStatus],
     vcf_ok: bool,
-    db_ok: bool,
+    db_has_records: bool,
     coverage_ok: bool,
     review_genes: Sequence[str] = (),
 ) -> str:
-    if not vcf_ok or not db_ok:
+    if not vcf_ok or not db_has_records:
         return ""
 
     genes_by_drug: dict[str, set[str]] = {}
@@ -1121,9 +1137,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     variants, vcf_meta, vcf_ok = read_vcf(args.vcf)
-    db_records, db_meta, db_ok = read_resistance_db(args.resistance_db)
+    db_records, db_meta, db_readable = read_resistance_db(args.resistance_db)
     coverage, coverage_ok = read_coverage(args.coverage)
-    if args.clinical_variants_tsv and not (vcf_ok and db_ok):
+    db_has_records = bool(db_records)
+    if args.clinical_variants_tsv and not (vcf_ok and db_readable):
         print("ERROR: clinical variants TSV requires a readable VCF and resistance database", file=sys.stderr)
         return 2
     reference = None
@@ -1146,7 +1163,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (OSError, ValueError, KeyError) as exc:
             print(f"ERROR: cannot normalize CMV against AD169: {exc}", file=sys.stderr)
             return 2
-    matches = match_variants(variants, db_records) if db_ok else []
+    matches = match_variants(variants, db_records) if db_readable else []
     unmatched_frameshifts = [v for v in variants if "frameshift" in v.consequence
                             and not any(m.variant == v for m in matches)]
     # If a frameshift has no match in the database, do not conclude susceptibility,
@@ -1277,7 +1294,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         matches=matches,
         coverage=coverage,
         vcf_ok=vcf_ok,
-        db_ok=db_ok,
+        db_has_records=db_has_records,
         coverage_ok=coverage_ok,
         review_genes=review_genes,
     )
